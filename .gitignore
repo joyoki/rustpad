@@ -1,0 +1,15 @@
+# Rust build artifacts
+/target
+
+# macOS
+.DS_Store
+
+# Packaging output
+/RustPad.app
+/RustPad.dmg
+*.dmg
+
+# Editor scratch / local files
+*.swp
+.idea/
+.vscode/

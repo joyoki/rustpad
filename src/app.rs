@@ -1,0 +1,1804 @@
+use eframe::egui;
+use std::path::PathBuf;
+
+use crate::config::theme::ThemeManager;
+use crate::config::AppConfig;
+use crate::diff::{DiffAlgorithm, DiffEngine, DiffOptions, DiffResult};
+use crate::editor::{Cursor, Selection, TabManager};
+use crate::highlight::Highlighter;
+use crate::search::{SearchEngine, SearchOptions};
+
+/// Which tab is active in the find/replace dialog.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SearchDialogTab {
+    #[default]
+    Find,
+    Replace,
+}
+
+/// One entry in the "Search results" panel.
+#[derive(Debug, Clone)]
+pub struct SearchResultItem {
+    /// Index of the tab the match lives in.
+    pub tab: usize,
+    /// Display title of the document (file name or "Untitled").
+    pub doc: String,
+    /// 0-based line number of the match.
+    pub line: usize,
+    /// 0-based column of the match.
+    pub col: usize,
+    /// Character offset of the match start.
+    pub start: usize,
+    /// Character offset of the match end (exclusive).
+    pub end: usize,
+    /// The full text of the line the match is on (for preview).
+    pub preview: String,
+}
+use crate::session::{AutoSaveManager, Session};
+use crate::ui::diff_navigator::DiffNavigator;
+use crate::ui::file_tree::FileTree;
+use crate::ui::keybindings::{Command, KeyBindings};
+use crate::ui::minimap::Minimap;
+use crate::ui::sidebar::SidebarTab;
+
+/// Left/right source line ranges covered by a diff change block.
+type LineRangePair = (std::ops::Range<usize>, std::ops::Range<usize>);
+
+/// Command palette state for quick actions.
+#[derive(Debug, Default)]
+#[allow(dead_code)]
+pub struct CommandPalette {
+    pub visible: bool,
+    pub query: String,
+    pub selected_index: usize,
+    pub commands: Vec<CommandEntry>,
+}
+
+/// A single command in the command palette.
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+pub struct CommandEntry {
+    pub name: String,
+    pub description: String,
+    pub shortcut: String,
+}
+
+/// Status bar data shown at the bottom of the window.
+#[derive(Debug, Default)]
+pub struct StatusBar {
+    pub line: usize,
+    pub column: usize,
+    pub encoding: String,
+    pub line_ending: String,
+    pub language: String,
+    pub cursor_position: String,
+}
+
+/// Top-level application state.
+#[allow(dead_code)]
+pub struct RustpadApp {
+    // Core data
+    pub tab_manager: TabManager,
+    pub active_tab: usize,
+    pub config: AppConfig,
+    pub session: Session,
+    pub highlighter: Highlighter,
+    pub search_engine: SearchEngine,
+
+    // UI state
+    pub show_sidebar: bool,
+    pub show_search: bool,
+    pub show_replace: bool,
+    pub show_diff_view: bool,
+    pub show_about: bool,
+    pub show_preferences: bool,
+    pub show_goto_line: bool,
+    pub show_unsaved_dialog: bool,
+    pub show_quit_unsaved_dialog: bool,
+    pub show_cross_file_search: bool,
+    pub search_replace_mode: bool,
+    pub sidebar_tab: SidebarTab,
+    pub goto_line_text: String,
+
+    // Command palette
+    pub command_palette: CommandPalette,
+
+    // Status bar
+    pub status_bar: StatusBar,
+
+    // Search state
+    pub search_pattern: String,
+    pub replace_pattern: String,
+    pub search_options: SearchOptions,
+    pub search_dialog_tab: SearchDialogTab,
+    pub search_history: Vec<String>,
+    pub search_status_message: String,
+    pub search_focus_input: bool,
+    pub search_focus_replace: bool,
+    pub search_panel_text: String,
+    pub search_results: Vec<(PathBuf, usize, String)>,
+    /// Flat list of every match for the "Search results" panel (with line info).
+    pub search_result_items: Vec<SearchResultItem>,
+    /// Whether the dockable "Search results" panel is visible.
+    pub show_search_results: bool,
+
+    // Cross-file search
+    pub cross_file_directory: String,
+    pub cross_file_filter: String,
+    pub cross_file_results: Vec<(PathBuf, usize, String)>,
+
+    // Diff state
+    pub diff_left_path: Option<PathBuf>,
+    pub diff_right_path: Option<PathBuf>,
+    pub diff_algorithm: DiffAlgorithm,
+    pub diff_result: Option<DiffResult>,
+    pub diff_ignore_whitespace: bool,
+    pub diff_ignore_case: bool,
+    pub diff_navigator: DiffNavigator,
+    /// In-memory copies of both sides so merges can be applied and saved.
+    pub diff_left_text: String,
+    pub diff_right_text: String,
+    pub diff_left_dirty: bool,
+    pub diff_right_dirty: bool,
+    /// Index of the currently focused change block (for prev/next navigation).
+    pub diff_current_change: usize,
+    /// One-shot request to scroll the diff view to a given row.
+    pub diff_scroll_to_row: Option<usize>,
+    /// Pending diff navigation requests (set from keyboard, applied after UI).
+    pub pending_diff_next: bool,
+    pub pending_diff_prev: bool,
+
+    // Workspace
+    pub workspace_root: Option<PathBuf>,
+
+    // File tree
+    pub file_tree: FileTree,
+
+    // Minimap
+    pub minimap: Minimap,
+
+    // Macro
+    pub macro_recording: bool,
+    pub macro_actions: Vec<String>,
+
+    // Auto-save
+    pub auto_save: AutoSaveManager,
+
+    // Keybindings
+    pub keybindings: KeyBindings,
+
+    // Theme manager
+    pub theme_manager: ThemeManager,
+
+    // Unsaved dialog
+    pub pending_close_tab: Option<usize>,
+
+    // Editor focus state
+    pub editor_has_focus: bool,
+
+    // Keyboard shortcut state
+    pub pending_new_tab: bool,
+    pub pending_open_file: bool,
+    pub pending_save: bool,
+    pub pending_close: bool,
+    pub pending_find: bool,
+    pub pending_replace: bool,
+    pub pending_find_next: bool,
+    pub pending_find_prev: bool,
+    pub pending_goto: bool,
+    pub pending_diff: bool,
+    pub pending_compare_files: bool,
+    pub pending_compare_current: bool,
+    pub pending_undo: bool,
+    pub pending_redo: bool,
+    pub pending_select_all: bool,
+    pub pending_next_tab: bool,
+    pub pending_prev_tab: bool,
+    pub pending_command_palette: bool,
+    pub pending_find_in_files: bool,
+    pub pending_cut: bool,
+    pub pending_copy: bool,
+    pub pending_paste: bool,
+    pub pending_save_as: bool,
+    pub pending_save_all: bool,
+    pub pending_toggle_sidebar: bool,
+    pub pending_exit: bool,
+    /// Set once the user confirms quitting; bypasses the unsaved-changes guard
+    /// so the window can actually close (e.g. after "Don't Save").
+    pub force_quit: bool,
+    last_session_persist: std::time::Instant,
+    last_applied_theme: String,
+}
+
+impl RustpadApp {
+    pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
+        log::info!("Initializing RustPad application...");
+
+        setup_cjk_fonts(cc);
+
+        let config = AppConfig::load();
+        let session = Session::load();
+        let mut tab_manager = if session.open_files.is_empty() {
+            TabManager::new()
+        } else {
+            TabManager::from_session(&session.open_files)
+        };
+
+        // Restore active tab, cursor, and scroll positions.
+        if !session.open_files.is_empty() {
+            tab_manager.set_active(
+                session
+                    .active_tab
+                    .min(tab_manager.tab_count().saturating_sub(1)),
+            );
+            for tab in tab_manager.tabs_mut() {
+                if let Some(path) = &tab.file_path.clone() {
+                    if let Some((line, col)) = session.get_cursor(path) {
+                        tab.cursor = Cursor::new(line, col);
+                    }
+                    if let Some(scroll) = session.get_scroll(path) {
+                        tab.scroll_offset = scroll;
+                    }
+                    tab.syntax_override = None;
+                }
+            }
+        }
+
+        let workspace_root = session.workspace_root.clone();
+
+        log::info!(
+            "Application initialized with {} tabs",
+            tab_manager.tab_count()
+        );
+
+        let mut app = Self {
+            tab_manager,
+            active_tab: 0,
+            config,
+            session,
+            highlighter: Highlighter::new(),
+            search_engine: SearchEngine::new(),
+            show_sidebar: true,
+            show_search: false,
+            show_replace: false,
+            show_diff_view: false,
+            show_about: false,
+            show_preferences: false,
+            show_goto_line: false,
+            show_unsaved_dialog: false,
+            show_quit_unsaved_dialog: false,
+            show_cross_file_search: false,
+            search_replace_mode: false,
+            sidebar_tab: SidebarTab::FileExplorer,
+            goto_line_text: String::new(),
+            command_palette: CommandPalette::default(),
+            status_bar: StatusBar::default(),
+            search_pattern: String::new(),
+            replace_pattern: String::new(),
+            search_options: SearchOptions::default(),
+            search_dialog_tab: SearchDialogTab::Find,
+            search_history: Vec::new(),
+            search_status_message: String::new(),
+            search_focus_input: false,
+            search_focus_replace: false,
+            search_panel_text: String::new(),
+            search_results: Vec::new(),
+            search_result_items: Vec::new(),
+            show_search_results: false,
+            cross_file_directory: String::new(),
+            cross_file_filter: "*.rs".to_string(),
+            cross_file_results: Vec::new(),
+            diff_left_path: None,
+            diff_right_path: None,
+            diff_algorithm: DiffAlgorithm::default(),
+            diff_result: None,
+            diff_left_text: String::new(),
+            diff_right_text: String::new(),
+            diff_left_dirty: false,
+            diff_right_dirty: false,
+            diff_current_change: 0,
+            diff_scroll_to_row: None,
+            pending_diff_next: false,
+            pending_diff_prev: false,
+            diff_ignore_whitespace: false,
+            diff_ignore_case: false,
+            diff_navigator: DiffNavigator::new(),
+            workspace_root,
+            file_tree: FileTree::new(),
+            minimap: Minimap::new(),
+            macro_recording: false,
+            macro_actions: Vec::new(),
+            auto_save: AutoSaveManager::default(),
+            keybindings: KeyBindings::default(),
+            theme_manager: ThemeManager::new(),
+            pending_close_tab: None,
+            pending_new_tab: false,
+            pending_open_file: false,
+            pending_save: false,
+            pending_close: false,
+            pending_find: false,
+            pending_replace: false,
+            pending_find_next: false,
+            pending_find_prev: false,
+            pending_goto: false,
+            pending_diff: false,
+            pending_compare_files: false,
+            pending_compare_current: false,
+            pending_undo: false,
+            pending_redo: false,
+            pending_select_all: false,
+            pending_next_tab: false,
+            pending_prev_tab: false,
+            pending_command_palette: false,
+            pending_find_in_files: false,
+            pending_cut: false,
+            pending_copy: false,
+            pending_paste: false,
+            pending_save_as: false,
+            pending_save_all: false,
+            pending_toggle_sidebar: false,
+            pending_exit: false,
+            force_quit: false,
+            editor_has_focus: false,
+            last_session_persist: std::time::Instant::now(),
+            last_applied_theme: String::new(),
+        };
+
+        app.apply_theme(&cc.egui_ctx);
+        app.last_applied_theme = app.config.ui.theme.clone();
+        app
+    }
+
+    /// Apply UI + editor theme from config.
+    pub fn apply_theme(&mut self, ctx: &egui::Context) {
+        let normalized = self.config.ui.theme.to_lowercase();
+        let editor_theme_name = if normalized == "dark" {
+            "Dark"
+        } else {
+            "Light"
+        };
+
+        self.theme_manager.set_theme(editor_theme_name);
+
+        if editor_theme_name == "Dark" {
+            ctx.set_visuals(egui::Visuals::dark());
+            self.highlighter.set_theme("base16-ocean.dark");
+        } else {
+            ctx.set_visuals(egui::Visuals::light());
+            self.highlighter.set_theme("InspiredGitHub");
+        }
+        self.highlighter.invalidate_all();
+    }
+
+    /// Re-apply theme when preferences change.
+    pub fn sync_theme(&mut self, ctx: &egui::Context) {
+        if self.config.ui.theme != self.last_applied_theme {
+            self.apply_theme(ctx);
+            self.last_applied_theme = self.config.ui.theme.clone();
+        }
+    }
+
+    /// Called after the user picks a new theme in preferences.
+    pub fn on_theme_changed(&mut self, ctx: &egui::Context) {
+        self.apply_theme(ctx);
+        self.last_applied_theme = self.config.ui.theme.clone();
+    }
+
+    /// Set syntax highlighting language for the active tab.
+    pub fn set_active_language(&mut self, syntax_name: &str) {
+        self.tab_manager.active_mut().syntax_override = Some(syntax_name.to_string());
+        self.highlighter.clear_cache();
+        self.highlighter.invalidate_all();
+    }
+
+    /// Reset syntax highlighting to auto-detect from file extension.
+    pub fn clear_active_language(&mut self) {
+        self.tab_manager.active_mut().syntax_override = None;
+        self.highlighter.clear_cache();
+        self.highlighter.invalidate_all();
+    }
+
+    /// Handle window close requests from the OS (red button / Cmd+Q).
+    pub fn handle_close_request(&mut self, ctx: &egui::Context) {
+        // Once the user has confirmed the quit, let the close proceed without
+        // re-triggering the unsaved-changes guard (buffers may still be dirty
+        // after "Don't Save").
+        if self.force_quit {
+            return;
+        }
+        if ctx.input(|i| i.viewport().close_requested()) && self.tab_manager.has_unsaved_changes() {
+            self.show_quit_unsaved_dialog = true;
+            ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+            ctx.request_repaint();
+        } else if ctx.input(|i| i.viewport().close_requested()) {
+            self.persist_session();
+        }
+    }
+
+    /// Recompute the diff from the in-memory left/right texts.
+    pub fn recompute_diff(&mut self) {
+        let engine = DiffEngine::new()
+            .with_algorithm(self.diff_algorithm)
+            .with_options(DiffOptions {
+                ignore_whitespace: self.diff_ignore_whitespace,
+                ignore_case: self.diff_ignore_case,
+                ignore_line_endings: true,
+            });
+
+        let result = engine.diff(&self.diff_left_text, &self.diff_right_text);
+        self.diff_navigator.total_hunks = result.hunks.len();
+        if self.diff_current_change >= result.change_count() {
+            self.diff_current_change = 0;
+        }
+        self.diff_result = Some(result);
+    }
+
+    /// Load both sides' text from disk into memory and compute the first diff.
+    fn begin_comparison(&mut self, left: PathBuf, right: PathBuf) {
+        let left_text = match std::fs::read_to_string(&left) {
+            Ok(t) => t,
+            Err(e) => {
+                log::error!("Failed to read {}: {}", left.display(), e);
+                return;
+            }
+        };
+        let right_text = match std::fs::read_to_string(&right) {
+            Ok(t) => t,
+            Err(e) => {
+                log::error!("Failed to read {}: {}", right.display(), e);
+                return;
+            }
+        };
+
+        self.diff_left_path = Some(left);
+        self.diff_right_path = Some(right);
+        self.diff_left_text = left_text;
+        self.diff_right_text = right_text;
+        self.diff_left_dirty = false;
+        self.diff_right_dirty = false;
+        self.diff_current_change = 0;
+        self.diff_scroll_to_row = None;
+        self.recompute_diff();
+        self.show_diff_view = self.diff_result.is_some();
+    }
+
+    /// Prompt for two files, compute the diff and open the comparison view.
+    /// If the user cancels either picker, nothing changes (avoids a blank view).
+    pub fn compare_files_dialog(&mut self) {
+        let left = rfd::FileDialog::new()
+            .set_title("Select the first (left) file to compare")
+            .pick_file();
+        let Some(left) = left else { return };
+
+        let right = rfd::FileDialog::new()
+            .set_title("Select the second (right) file to compare")
+            .pick_file();
+        let Some(right) = right else { return };
+
+        self.begin_comparison(left, right);
+    }
+
+    /// Compare the current file against another file chosen by the user.
+    pub fn compare_current_with_dialog(&mut self) {
+        let current = self.tab_manager.active().file_path.clone();
+        let Some(current) = current else {
+            log::warn!("Compare current: active tab has no saved file path");
+            return;
+        };
+
+        let other = rfd::FileDialog::new()
+            .set_title("Select a file to compare with the current file")
+            .pick_file();
+        let Some(other) = other else { return };
+
+        self.begin_comparison(current, other);
+    }
+
+    /// Replace the left side with a newly chosen file and re-diff.
+    pub fn diff_open_left(&mut self, path: PathBuf) {
+        match std::fs::read_to_string(&path) {
+            Ok(text) => {
+                self.diff_left_path = Some(path);
+                self.diff_left_text = text;
+                self.diff_left_dirty = false;
+                self.recompute_diff();
+            }
+            Err(e) => log::error!("Failed to read {}: {}", path.display(), e),
+        }
+    }
+
+    /// Replace the right side with a newly chosen file and re-diff.
+    pub fn diff_open_right(&mut self, path: PathBuf) {
+        match std::fs::read_to_string(&path) {
+            Ok(text) => {
+                self.diff_right_path = Some(path);
+                self.diff_right_text = text;
+                self.diff_right_dirty = false;
+                self.recompute_diff();
+            }
+            Err(e) => log::error!("Failed to read {}: {}", path.display(), e),
+        }
+    }
+
+    /// Swap the two sides and re-diff.
+    pub fn diff_swap(&mut self) {
+        std::mem::swap(&mut self.diff_left_path, &mut self.diff_right_path);
+        std::mem::swap(&mut self.diff_left_text, &mut self.diff_right_text);
+        std::mem::swap(&mut self.diff_left_dirty, &mut self.diff_right_dirty);
+        self.recompute_diff();
+    }
+
+    /// Jump to the next change block and scroll to it.
+    pub fn diff_next_change(&mut self) {
+        let Some(result) = &self.diff_result else {
+            return;
+        };
+        let count = result.change_count();
+        if count == 0 {
+            return;
+        }
+        self.diff_current_change = (self.diff_current_change + 1) % count;
+        self.diff_scroll_to_row = result.change_starts.get(self.diff_current_change).copied();
+    }
+
+    /// Jump to the previous change block and scroll to it.
+    pub fn diff_prev_change(&mut self) {
+        let Some(result) = &self.diff_result else {
+            return;
+        };
+        let count = result.change_count();
+        if count == 0 {
+            return;
+        }
+        self.diff_current_change = (self.diff_current_change + count - 1) % count;
+        self.diff_scroll_to_row = result.change_starts.get(self.diff_current_change).copied();
+    }
+
+    /// Collect the left/right source line ranges covered by a change block.
+    /// Returns `(left_range, right_range)` as half-open `[start, end)` indices
+    /// into the corresponding side's line vector.
+    fn change_block_ranges(&self, change_id: usize) -> Option<LineRangePair> {
+        let result = self.diff_result.as_ref()?;
+        let rows: Vec<&crate::diff::DiffRow> = result
+            .rows
+            .iter()
+            .filter(|r| r.change_id == Some(change_id))
+            .collect();
+        if rows.is_empty() {
+            return None;
+        }
+
+        let left_lines: Vec<usize> = rows.iter().filter_map(|r| r.left_line).collect();
+        let right_lines: Vec<usize> = rows.iter().filter_map(|r| r.right_line).collect();
+
+        let left_range =
+            if let (Some(&s), Some(&e)) = (left_lines.iter().min(), left_lines.iter().max()) {
+                s..e + 1
+            } else {
+                // Pure insert on the right: empty range at the left insertion cursor.
+                let at = rows[0].left_at;
+                at..at
+            };
+        let right_range =
+            if let (Some(&s), Some(&e)) = (right_lines.iter().min(), right_lines.iter().max()) {
+                s..e + 1
+            } else {
+                let at = rows[0].right_at;
+                at..at
+            };
+
+        Some((left_range, right_range))
+    }
+
+    fn split_lines(text: &str) -> Vec<String> {
+        text.lines().map(|l| l.to_string()).collect()
+    }
+
+    /// Merge a change block from the left side into the right side.
+    pub fn diff_merge_to_right(&mut self, change_id: usize) {
+        let Some((left_range, right_range)) = self.change_block_ranges(change_id) else {
+            return;
+        };
+        let left_lines = Self::split_lines(&self.diff_left_text);
+        let mut right_lines = Self::split_lines(&self.diff_right_text);
+        let replacement: Vec<String> = left_lines[left_range].to_vec();
+        let end = right_range.end.min(right_lines.len());
+        let start = right_range.start.min(end);
+        right_lines.splice(start..end, replacement);
+        self.diff_right_text = right_lines.join("\n");
+        self.diff_right_dirty = true;
+        self.recompute_diff();
+    }
+
+    /// Merge a change block from the right side into the left side.
+    pub fn diff_merge_to_left(&mut self, change_id: usize) {
+        let Some((left_range, right_range)) = self.change_block_ranges(change_id) else {
+            return;
+        };
+        let right_lines = Self::split_lines(&self.diff_right_text);
+        let mut left_lines = Self::split_lines(&self.diff_left_text);
+        let replacement: Vec<String> = right_lines[right_range].to_vec();
+        let end = left_range.end.min(left_lines.len());
+        let start = left_range.start.min(end);
+        left_lines.splice(start..end, replacement);
+        self.diff_left_text = left_lines.join("\n");
+        self.diff_left_dirty = true;
+        self.recompute_diff();
+    }
+
+    /// Write the (possibly merged) left text back to its file.
+    pub fn diff_save_left(&mut self) {
+        if let Some(path) = self.diff_left_path.clone() {
+            if let Err(e) = std::fs::write(&path, &self.diff_left_text) {
+                log::error!("Failed to save {}: {}", path.display(), e);
+            } else {
+                self.diff_left_dirty = false;
+                self.sync_open_tab_with_disk(&path, &self.diff_left_text.clone());
+            }
+        }
+    }
+
+    /// Write the (possibly merged) right text back to its file.
+    pub fn diff_save_right(&mut self) {
+        if let Some(path) = self.diff_right_path.clone() {
+            if let Err(e) = std::fs::write(&path, &self.diff_right_text) {
+                log::error!("Failed to save {}: {}", path.display(), e);
+            } else {
+                self.diff_right_dirty = false;
+                self.sync_open_tab_with_disk(&path, &self.diff_right_text.clone());
+            }
+        }
+    }
+
+    /// If the given file is open in a tab, refresh its buffer from disk text.
+    fn sync_open_tab_with_disk(&mut self, path: &std::path::Path, text: &str) {
+        for tab in self.tab_manager.tabs_mut() {
+            if tab.file_path.as_deref() == Some(path) {
+                tab.buffer = crate::editor::buffer::TextBuffer::from_str(text);
+                tab.modified = false;
+            }
+        }
+        self.highlighter.invalidate_all();
+    }
+
+    /// Leave diff mode and clear comparison state.
+    pub fn close_diff_view(&mut self) {
+        self.show_diff_view = false;
+    }
+
+    /// Export diff report as HTML.
+    pub fn export_diff_report(&self) {
+        if let Some(ref result) = self.diff_result {
+            let mut html = String::from("<!DOCTYPE html><html><head><style>");
+            html.push_str("body { font-family: monospace; }");
+            html.push_str(".equal { background: #fff; }");
+            html.push_str(".insert { background: #e4ffe4; }");
+            html.push_str(".delete { background: #ffe4e4; }");
+            html.push_str(".replace { background: #fffbe4; }");
+            html.push_str("</style></head><body>");
+            html.push_str("<h1>Diff Report</h1>");
+            html.push_str("<table>");
+
+            for line in &result.lines {
+                let class = match line.tag {
+                    crate::diff::DiffTag::Equal => "equal",
+                    crate::diff::DiffTag::Insert => "insert",
+                    crate::diff::DiffTag::Delete => "delete",
+                    crate::diff::DiffTag::Replace => "replace",
+                };
+                html.push_str(&format!(
+                    "<tr class=\"{}\"><td>{}</td></tr>",
+                    class, line.content
+                ));
+            }
+
+            html.push_str("</table></body></html>");
+
+            if let Some(path) = rfd::FileDialog::new()
+                .add_filter("HTML", &["html"])
+                .save_file()
+            {
+                let _ = std::fs::write(path, html);
+            }
+        }
+    }
+
+    /// Update status bar with current tab information.
+    pub fn update_status_bar(&mut self) {
+        let tab = self.tab_manager.active();
+        self.status_bar.line = tab.cursor.line + 1;
+        self.status_bar.column = tab.cursor.col + 1;
+        self.status_bar.encoding = format!("{:?}", tab.encoding);
+        self.status_bar.line_ending = format!("{:?}", tab.buffer.line_ending());
+        self.status_bar.language = {
+            let filename = tab
+                .file_path
+                .as_ref()
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_else(|| tab.title.clone());
+            self.highlighter
+                .syntax_name_for_file(&filename, tab.syntax_override.as_deref())
+        };
+        self.status_bar.cursor_position = format!(
+            "Ln {}, Col {}",
+            self.status_bar.line, self.status_bar.column
+        );
+    }
+
+    /// Open a file dialog and open the selected file.
+    pub fn open_file_dialog(&mut self) {
+        if let Some(path) = rfd::FileDialog::new()
+            .add_filter("All Files", &["*"])
+            .add_filter(
+                "Text Files",
+                &[
+                    "txt", "md", "rs", "py", "js", "ts", "html", "css", "json", "toml", "yaml",
+                ],
+            )
+            .pick_file()
+        {
+            self.open_file(path);
+        }
+    }
+
+    /// Open a file in a new tab.
+    pub fn open_file(&mut self, path: PathBuf) {
+        log::info!("Opening file: {:?}", path);
+        match self.tab_manager.open_file(&path) {
+            Ok(_) => {
+                self.tab_manager.active_mut().syntax_override = None;
+                self.highlighter.clear_cache();
+                self.highlighter.invalidate_all();
+                self.config.add_recent_file(path.clone());
+                self.session.add_recent_file(path);
+                self.persist_session();
+            }
+            Err(e) => {
+                log::error!("Failed to open file: {}", e);
+            }
+        }
+    }
+
+    /// Save the current tab.
+    pub fn save_current_tab(&mut self) {
+        let has_path = self.tab_manager.active().file_path.is_some();
+        if has_path {
+            let _ = self.tab_manager.active_mut().save();
+        } else {
+            self.save_as_dialog();
+        }
+    }
+
+    /// Save As dialog for the current tab.
+    pub fn save_as_dialog(&mut self) {
+        let default_name = self
+            .tab_manager
+            .active()
+            .file_path
+            .as_ref()
+            .and_then(|p| p.file_name().map(|n| n.to_string_lossy().to_string()))
+            .unwrap_or_else(|| "untitled.txt".to_string());
+
+        if let Some(mut path) = rfd::FileDialog::new()
+            .add_filter("Text File (*.txt)", &["txt"])
+            .add_filter("Rust (*.rs)", &["rs"])
+            .add_filter("C (*.c)", &["c"])
+            .add_filter("C/C++ Header (*.h)", &["h", "hpp"])
+            .add_filter("C++ (*.cpp)", &["cpp", "cc", "cxx"])
+            .add_filter("Java (*.java)", &["java"])
+            .add_filter("Python (*.py)", &["py"])
+            .add_filter("JavaScript (*.js)", &["js"])
+            .add_filter("TypeScript (*.ts)", &["ts"])
+            .add_filter("Go (*.go)", &["go"])
+            .add_filter("HTML (*.html)", &["html", "htm"])
+            .add_filter("CSS (*.css)", &["css"])
+            .add_filter("JSON (*.json)", &["json"])
+            .add_filter("TOML (*.toml)", &["toml"])
+            .add_filter("YAML (*.yaml)", &["yaml", "yml"])
+            .add_filter("Markdown (*.md)", &["md"])
+            .add_filter("XML (*.xml)", &["xml"])
+            .add_filter("Shell (*.sh)", &["sh"])
+            .add_filter("All Files (*.*)", &["*"])
+            .set_file_name(&default_name)
+            .save_file()
+        {
+            if path.extension().is_none() {
+                path.set_extension("txt");
+            }
+            let _ = self.tab_manager.active_mut().save_as(&path);
+            // New extension may change the language; refresh highlighting.
+            self.tab_manager.active_mut().syntax_override = None;
+            self.highlighter.clear_cache();
+            self.highlighter.invalidate_all();
+        }
+    }
+
+    /// Save all tabs that already have a file path.
+    pub fn save_all_tabs(&mut self) {
+        for tab in self.tab_manager.tabs_mut() {
+            if tab.file_path.is_some() {
+                let _ = tab.save();
+            }
+        }
+    }
+
+    /// Save every dirty tab before quitting. Returns false if the user cancels.
+    pub fn save_all_tabs_for_quit(&mut self) -> bool {
+        let dirty_indices: Vec<usize> = self.tab_manager.unsaved_tab_indices();
+        for idx in dirty_indices {
+            self.tab_manager.set_active(idx);
+            let tab = self.tab_manager.active();
+            if tab.file_path.is_none() {
+                self.save_as_dialog();
+                let still_unsaved = self.tab_manager.active().file_path.is_none()
+                    && (self.tab_manager.active().buffer.is_dirty()
+                        || self.tab_manager.active().modified);
+                if still_unsaved {
+                    return false;
+                }
+            } else {
+                let _ = self.tab_manager.active_mut().save();
+            }
+        }
+        true
+    }
+
+    /// Persist open files, cursor, scroll, and workspace to disk.
+    pub fn persist_session(&mut self) {
+        self.session.open_files = self
+            .tab_manager
+            .tabs()
+            .iter()
+            .filter_map(|t| t.file_path.clone())
+            .collect();
+        self.session.active_tab = self.tab_manager.active_index();
+        for tab in self.tab_manager.tabs() {
+            if let Some(path) = &tab.file_path {
+                self.session
+                    .update_cursor(path, tab.cursor.line, tab.cursor.col);
+                self.session.update_scroll(path, tab.scroll_offset);
+            }
+        }
+        if let Some(root) = &self.workspace_root {
+            self.session.set_workspace(root.clone());
+        }
+        let _ = self.session.save();
+    }
+
+    /// Begin application exit; show save prompt when needed.
+    pub fn request_exit(&mut self, ctx: &egui::Context) {
+        if self.tab_manager.has_unsaved_changes() {
+            self.show_quit_unsaved_dialog = true;
+            ctx.request_repaint();
+        } else {
+            self.persist_session();
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+        }
+    }
+
+    /// Finish quit after the user chose to discard unsaved changes.
+    pub fn confirm_quit_without_save(&mut self, ctx: &egui::Context) {
+        self.show_quit_unsaved_dialog = false;
+        self.force_quit = true;
+        self.persist_session();
+        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+    }
+
+    /// Finish quit after saving all tabs.
+    pub fn confirm_quit_after_save(&mut self, ctx: &egui::Context) -> bool {
+        if self.save_all_tabs_for_quit() {
+            self.show_quit_unsaved_dialog = false;
+            self.force_quit = true;
+            self.persist_session();
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Close the current tab.
+    pub fn close_current_tab(&mut self) {
+        let idx = self.tab_manager.active_index();
+        let is_dirty =
+            self.tab_manager.tabs()[idx].buffer.is_dirty() || self.tab_manager.tabs()[idx].modified;
+        if is_dirty {
+            self.pending_close_tab = Some(idx);
+            self.show_unsaved_dialog = true;
+        } else if self.tab_manager.tab_count() > 1 {
+            self.tab_manager.close_tab(idx);
+        }
+    }
+
+    /// Cut selected text to clipboard.
+    pub fn cut(&mut self) {
+        if let Some(text) = self.get_selected_text() {
+            copy_to_clipboard(&text);
+            let (start, end) = {
+                let tab = self.tab_manager.active();
+                tab.selection.to_byte_range(&tab.buffer)
+            };
+            self.tab_manager
+                .active_mut()
+                .buffer
+                .delete_range(start, end);
+            let normalized = {
+                let tab = self.tab_manager.active();
+                tab.selection.normalized()
+            };
+            self.tab_manager.active_mut().cursor = normalized.start;
+            self.tab_manager.active_mut().selection = Selection::cursor(normalized.start);
+        }
+    }
+
+    /// Copy selected text to clipboard.
+    pub fn copy(&self) {
+        if let Some(text) = self.get_selected_text() {
+            copy_to_clipboard(&text);
+        }
+    }
+
+    /// Paste from clipboard.
+    pub fn paste(&mut self) {
+        if let Some(text) = paste_from_clipboard() {
+            self.delete_selection();
+            let (line, col) = {
+                let tab = self.tab_manager.active();
+                (tab.cursor.line, tab.cursor.col)
+            };
+            let offset = self
+                .tab_manager
+                .active()
+                .buffer
+                .char_pos_for_line_col(line, col);
+            self.tab_manager
+                .active_mut()
+                .buffer
+                .insert_str(offset, &text);
+            let lines: Vec<&str> = text.split('\n').collect();
+            let tab = self.tab_manager.active_mut();
+            if lines.len() > 1 {
+                tab.cursor.line += lines.len() - 1;
+                tab.cursor.col = lines.last().map(|l| l.chars().count()).unwrap_or(0);
+            } else {
+                tab.cursor.col += text.chars().count();
+            }
+            self.highlighter.invalidate_all();
+        }
+    }
+
+    /// Select all text in the current buffer.
+    pub fn select_all(&mut self) {
+        let tab = self.tab_manager.active_mut();
+        let last_line = tab.line_count().saturating_sub(1);
+        let last_col = tab.buffer.line_len(last_line);
+        let end = Cursor::new(last_line, last_col);
+        tab.selection = Selection::new(Cursor::new(0, 0), end);
+        tab.cursor = end;
+    }
+
+    /// Delete the current selection, if any. Returns true when text was removed.
+    pub fn delete_selection(&mut self) -> bool {
+        let tab = self.tab_manager.active();
+        if tab.selection.is_empty() {
+            return false;
+        }
+        let (start, end) = tab.selection.to_byte_range(&tab.buffer);
+        let normalized = tab.selection.normalized();
+        self.tab_manager
+            .active_mut()
+            .buffer
+            .delete_range(start, end);
+        self.tab_manager.active_mut().cursor = normalized.start;
+        self.tab_manager.active_mut().selection = Selection::cursor(normalized.start);
+        self.highlighter.invalidate_all();
+        true
+    }
+
+    /// Get selected text from the active tab.
+    fn get_selected_text(&self) -> Option<String> {
+        let tab = self.tab_manager.active();
+        if tab.selection.is_empty() {
+            return None;
+        }
+        let (start, end) = tab.selection.to_byte_range(&tab.buffer);
+        tab.buffer.text().get(start..end).map(|s| s.to_string())
+    }
+
+    /// Toggle macro recording.
+    pub fn toggle_macro_recording(&mut self) {
+        self.macro_recording = !self.macro_recording;
+        if self.macro_recording {
+            self.macro_actions.clear();
+            log::info!("Macro recording started");
+        } else {
+            log::info!(
+                "Macro recording stopped ({} actions)",
+                self.macro_actions.len()
+            );
+        }
+    }
+
+    /// Toggle command palette visibility.
+    pub fn toggle_command_palette(&mut self) {
+        self.command_palette.visible = !self.command_palette.visible;
+        if self.command_palette.visible {
+            self.command_palette.query.clear();
+            self.command_palette.selected_index = 0;
+        }
+    }
+
+    /// Whether a modal dialog should take priority over the editor for focus.
+    pub fn blocks_editor_focus(&self) -> bool {
+        self.show_search
+            || self.show_cross_file_search
+            || self.show_goto_line
+            || self.show_preferences
+            || self.show_about
+            || self.show_unsaved_dialog
+            || self.show_quit_unsaved_dialog
+    }
+
+    /// Open find/replace dialog and run an initial search.
+    pub fn open_find(&mut self, replace_mode: bool) {
+        self.search_dialog_tab = if replace_mode {
+            SearchDialogTab::Replace
+        } else {
+            SearchDialogTab::Find
+        };
+        self.search_replace_mode = replace_mode;
+        self.show_search = true;
+        self.search_focus_input = true;
+        self.search_status_message.clear();
+        // Release editor focus so the dialog text fields can receive keyboard input.
+        self.editor_has_focus = false;
+
+        if let Some(selected) = self.get_selected_text() {
+            if !selected.is_empty() && !selected.contains('\n') {
+                self.search_pattern = selected;
+            }
+        }
+
+        if !self.search_pattern.is_empty() {
+            self.refresh_search_results(true);
+            let n = self.search_engine.results().len();
+            self.search_status_message = format!("Found {n} match(es).");
+            if n > 0 {
+                self.show_search_results = true;
+            }
+        }
+    }
+
+    fn remember_search_pattern(&mut self) {
+        if self.search_pattern.is_empty() {
+            return;
+        }
+        self.search_history.retain(|s| s != &self.search_pattern);
+        self.search_history.insert(0, self.search_pattern.clone());
+        self.search_history.truncate(20);
+    }
+
+    /// Find next respecting the Backward direction option.
+    pub fn find_next_in_dialog(&mut self) {
+        if self.search_options.backward {
+            self.find_prev_match();
+        } else {
+            self.find_next_match();
+        }
+        self.remember_search_pattern();
+        self.update_search_status_after_nav();
+    }
+
+    /// Find previous respecting the Backward direction option.
+    pub fn find_prev_in_dialog(&mut self) {
+        if self.search_options.backward {
+            self.find_next_match();
+        } else {
+            self.find_prev_match();
+        }
+        self.remember_search_pattern();
+        self.update_search_status_after_nav();
+    }
+
+    fn update_search_status_after_nav(&mut self) {
+        let total = self.search_engine.results().len();
+        if total == 0 {
+            self.search_status_message = "No matches found.".to_string();
+        } else if let Some(idx) = self.search_engine.current_index() {
+            self.search_status_message = format!("Match {} of {}.", idx + 1, total);
+        }
+    }
+
+    /// Count matches in the current document.
+    pub fn search_count_current(&mut self) {
+        self.refresh_search_results(false);
+        let count = self.search_engine.results().len();
+        self.search_status_message = if count == 0 {
+            "Count: 0 matches.".to_string()
+        } else {
+            format!("Count: {count} match(es) in current document.")
+        };
+    }
+
+    /// Find all matches in the current document and jump to the first.
+    pub fn find_all_in_current_document(&mut self) {
+        self.refresh_search_results(true);
+        let count = self.search_engine.results().len();
+        self.search_status_message = if count == 0 {
+            "No matches in current document.".to_string()
+        } else {
+            format!("Found {count} match(es) in current document.")
+        };
+        self.show_search_results = true;
+        self.remember_search_pattern();
+    }
+
+    /// Report match counts across every open tab.
+    pub fn find_all_in_open_documents(&mut self) {
+        self.sync_search_engine_options();
+        let pattern = self.search_pattern.clone();
+        if pattern.is_empty() {
+            self.search_status_message = "Enter text to find.".to_string();
+            return;
+        }
+
+        let mut total = 0usize;
+        let mut parts = Vec::new();
+        let mut items = Vec::new();
+        for (tab_idx, tab) in self.tab_manager.tabs().iter().enumerate() {
+            let mut engine = SearchEngine::new();
+            engine.set_options(self.search_options.clone());
+            let matches = engine.find_all(&tab.buffer.text(), &pattern);
+            let n = matches.len();
+            if n > 0 {
+                total += n;
+                let title = tab.display_title();
+                parts.push(format!("{title}: {n}"));
+                for m in &matches {
+                    let preview = tab
+                        .buffer
+                        .line(m.line)
+                        .unwrap_or_default()
+                        .trim_end()
+                        .to_string();
+                    items.push(SearchResultItem {
+                        tab: tab_idx,
+                        doc: title.clone(),
+                        line: m.line,
+                        col: m.col,
+                        start: m.start,
+                        end: m.end,
+                        preview,
+                    });
+                }
+            }
+        }
+
+        self.search_result_items = items;
+        self.show_search_results = true;
+        self.search_status_message = if total == 0 {
+            "No matches in open documents.".to_string()
+        } else {
+            format!("Found {total} match(es) — {}", parts.join(", "))
+        };
+        self.remember_search_pattern();
+    }
+
+    pub fn clear_search_status(&mut self) {
+        self.search_status_message.clear();
+        self.search_engine.set_current_index(None);
+        self.search_result_items.clear();
+        self.show_search_results = false;
+    }
+
+    /// Sync UI search options into the search engine.
+    fn sync_search_engine_options(&mut self) {
+        self.search_engine.set_options(self.search_options.clone());
+    }
+
+    /// Re-run search in the active tab and optionally jump to the first match.
+    pub fn refresh_search_results(&mut self, jump_to_first: bool) {
+        self.sync_search_engine_options();
+        let text = self.tab_manager.active().buffer.text();
+        let pattern = self.search_pattern.clone();
+        self.search_engine.find_all(&text, &pattern);
+        self.rebuild_search_result_items();
+
+        if jump_to_first {
+            if self.search_engine.next_match().is_some() {
+                let m = self.search_engine.results()[0].clone();
+                self.go_to_search_match(&m);
+            }
+        } else if let Some(idx) = self.search_engine.current_index() {
+            if let Some(m) = self.search_engine.results().get(idx).cloned() {
+                self.go_to_search_match(&m);
+            }
+        }
+    }
+
+    /// Rebuild the "Search results" list from the current document's matches.
+    pub fn rebuild_search_result_items(&mut self) {
+        let tab_idx = self.tab_manager.active_index();
+        let doc = self.tab_manager.active().display_title();
+        let mut items = Vec::with_capacity(self.search_engine.results().len());
+        for m in self.search_engine.results() {
+            let preview = self
+                .tab_manager
+                .active()
+                .buffer
+                .line(m.line)
+                .unwrap_or_default()
+                .trim_end()
+                .to_string();
+            items.push(SearchResultItem {
+                tab: tab_idx,
+                doc: doc.clone(),
+                line: m.line,
+                col: m.col,
+                start: m.start,
+                end: m.end,
+                preview,
+            });
+        }
+        self.search_result_items = items;
+    }
+
+    /// Jump to a result-list entry, switching tabs if needed.
+    pub fn jump_to_result_item(&mut self, idx: usize) {
+        let Some(item) = self.search_result_items.get(idx).cloned() else {
+            return;
+        };
+        if item.tab < self.tab_manager.tabs().len() {
+            self.tab_manager.set_active(item.tab);
+        }
+        // Keep the engine's "current match" in sync when the list maps 1:1 to the
+        // active document's results, so the editor highlights the right entry.
+        if item.tab == self.tab_manager.active_index() && idx < self.search_engine.results().len() {
+            self.search_engine.set_current_index(Some(idx));
+        }
+        let m = crate::search::SearchMatch {
+            start: item.start,
+            end: item.end,
+            text: String::new(),
+            line: item.line,
+            col: item.col,
+        };
+        self.go_to_search_match(&m);
+        self.update_search_status_after_nav();
+    }
+
+    /// Move the editor cursor/selection to a search match and scroll it into view.
+    pub fn go_to_search_match(&mut self, m: &crate::search::SearchMatch) {
+        let (start_line, start_col) = self
+            .tab_manager
+            .active()
+            .buffer
+            .line_col_for_char_pos(m.start);
+        let (end_line, end_col) = self
+            .tab_manager
+            .active()
+            .buffer
+            .line_col_for_char_pos(m.end);
+
+        let tab = self.tab_manager.active_mut();
+        tab.cursor = Cursor::new(end_line, end_col);
+        tab.selection = Selection::new(
+            Cursor::new(start_line, start_col),
+            Cursor::new(end_line, end_col),
+        );
+        let line_height = self.config.editor.font_size * 1.4;
+        tab.scroll_offset = start_line as f32 * line_height;
+    }
+
+    /// Find and highlight the next match.
+    pub fn find_next_match(&mut self) {
+        if self.search_engine.results().is_empty() && !self.search_pattern.is_empty() {
+            self.refresh_search_results(true);
+            return;
+        }
+        if let Some(m) = self.search_engine.next_match() {
+            let m = m.clone();
+            self.go_to_search_match(&m);
+        }
+    }
+
+    /// Find and highlight the previous match.
+    pub fn find_prev_match(&mut self) {
+        if self.search_engine.results().is_empty() && !self.search_pattern.is_empty() {
+            self.refresh_search_results(true);
+            return;
+        }
+        if let Some(m) = self.search_engine.prev_match() {
+            let m = m.clone();
+            self.go_to_search_match(&m);
+        }
+    }
+
+    /// Replace the current match and advance to the next one.
+    pub fn replace_current_match(&mut self) {
+        if self.search_engine.results().is_empty() && !self.search_pattern.is_empty() {
+            self.refresh_search_results(true);
+        }
+        let replacement = self.replace_pattern.clone();
+        if let Some((start, end, new_text)) = self.search_engine.replace_current("", &replacement) {
+            self.tab_manager
+                .active_mut()
+                .buffer
+                .replace_range(start, end, &new_text);
+            self.highlighter.invalidate_all();
+            self.refresh_search_results(false);
+            self.find_next_match();
+        }
+    }
+
+    /// Replace every match in the active tab.
+    pub fn replace_all_matches(&mut self) {
+        if self.search_engine.results().is_empty() && !self.search_pattern.is_empty() {
+            self.refresh_search_results(false);
+        }
+        let replacement = self.replace_pattern.clone();
+        let matches: Vec<_> = self.search_engine.results().to_vec();
+        if matches.is_empty() {
+            return;
+        }
+        {
+            let buffer = &mut self.tab_manager.active_mut().buffer;
+            for m in matches.iter().rev() {
+                buffer.replace_range(m.start, m.end, &replacement);
+            }
+        }
+        self.highlighter.invalidate_all();
+        self.refresh_search_results(false);
+    }
+
+    /// Perform cross-file search.
+    pub fn perform_cross_file_search(&mut self) {
+        use std::fs;
+
+        self.cross_file_results.clear();
+        let dir = PathBuf::from(&self.cross_file_directory);
+        if !dir.exists() {
+            return;
+        }
+
+        let pattern = &self.search_pattern;
+        if pattern.is_empty() {
+            return;
+        }
+
+        let filter = &self.cross_file_filter;
+        let extensions: Vec<&str> = filter
+            .split(',')
+            .map(|s| s.trim().trim_start_matches("*."))
+            .collect();
+
+        if let Ok(entries) = fs::read_dir(&dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_file() {
+                    let ext = path
+                        .extension()
+                        .map(|e| e.to_string_lossy().to_string())
+                        .unwrap_or_default();
+                    if extensions.iter().any(|e| e == &ext || *e == "*") {
+                        if let Ok(content) = fs::read_to_string(&path) {
+                            for (line_num, line) in content.lines().enumerate() {
+                                if line.contains(pattern) {
+                                    self.cross_file_results.push((
+                                        path.clone(),
+                                        line_num,
+                                        line.to_string(),
+                                    ));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Perform auto-save if needed.
+    pub fn auto_save_check(&mut self) {
+        if self.auto_save.should_save() {
+            for tab in self.tab_manager.tabs() {
+                if let Some(path) = &tab.file_path {
+                    if tab.buffer.is_dirty() {
+                        let _ = self
+                            .auto_save
+                            .write_crash_recovery(path, &tab.buffer.text());
+                    }
+                }
+            }
+            self.auto_save.mark_saved();
+        }
+    }
+
+    /// Process pending keyboard shortcut actions.
+    fn process_pending_actions(&mut self) {
+        if self.pending_new_tab {
+            self.pending_new_tab = false;
+            self.tab_manager.new_tab();
+        }
+        if self.pending_save {
+            self.pending_save = false;
+            self.save_current_tab();
+        }
+        if self.pending_close {
+            self.pending_close = false;
+            self.close_current_tab();
+        }
+        if self.pending_find {
+            self.pending_find = false;
+            self.open_find(false);
+        }
+        if self.pending_replace {
+            self.pending_replace = false;
+            self.open_find(true);
+        }
+        if self.pending_find_next {
+            self.pending_find_next = false;
+            if self.show_search {
+                self.find_next_in_dialog();
+            } else if !self.search_pattern.is_empty() {
+                self.find_next_match();
+            } else {
+                self.open_find(false);
+            }
+        }
+        if self.pending_find_prev {
+            self.pending_find_prev = false;
+            if self.show_search {
+                self.find_prev_in_dialog();
+            } else if !self.search_pattern.is_empty() {
+                self.find_prev_match();
+            } else {
+                self.open_find(false);
+            }
+        }
+        if self.pending_goto {
+            self.pending_goto = false;
+            self.show_goto_line = true;
+        }
+        if self.pending_diff {
+            self.pending_diff = false;
+            self.pending_compare_files = true;
+        }
+        if self.pending_diff_next {
+            self.pending_diff_next = false;
+            self.diff_next_change();
+        }
+        if self.pending_diff_prev {
+            self.pending_diff_prev = false;
+            self.diff_prev_change();
+        }
+        if self.pending_undo {
+            self.pending_undo = false;
+            self.tab_manager.active_mut().buffer.undo();
+        }
+        if self.pending_redo {
+            self.pending_redo = false;
+            self.tab_manager.active_mut().buffer.redo();
+        }
+        if self.pending_select_all {
+            self.pending_select_all = false;
+            self.select_all();
+        }
+        if self.pending_next_tab {
+            self.pending_next_tab = false;
+            let next = (self.tab_manager.active_index() + 1) % self.tab_manager.tab_count();
+            self.tab_manager.set_active(next);
+        }
+        if self.pending_prev_tab {
+            self.pending_prev_tab = false;
+            let count = self.tab_manager.tab_count();
+            let prev = if count == 0 {
+                0
+            } else {
+                (self.tab_manager.active_index() + count - 1) % count
+            };
+            self.tab_manager.set_active(prev);
+        }
+        if self.pending_command_palette {
+            self.pending_command_palette = false;
+            self.toggle_command_palette();
+        }
+        if self.pending_find_in_files {
+            self.pending_find_in_files = false;
+            self.editor_has_focus = false;
+            self.show_cross_file_search = true;
+        }
+        if self.pending_cut {
+            self.pending_cut = false;
+            self.cut();
+            self.highlighter.invalidate_all();
+        }
+        if self.pending_copy {
+            self.pending_copy = false;
+            self.copy();
+        }
+        if self.pending_paste {
+            self.pending_paste = false;
+            self.paste();
+            self.highlighter.invalidate_all();
+        }
+        if self.pending_save_as {
+            self.pending_save_as = false;
+            self.save_as_dialog();
+        }
+        if self.pending_save_all {
+            self.pending_save_all = false;
+            self.save_all_tabs();
+        }
+        if self.pending_toggle_sidebar {
+            self.pending_toggle_sidebar = false;
+            self.show_sidebar = !self.show_sidebar;
+        }
+    }
+
+    /// Collect keyboard shortcut flags using the keybinding system.
+    fn collect_shortcuts(&mut self, ctx: &egui::Context) {
+        // Diff navigation (F7 prev / F8 next), only while comparing.
+        if self.show_diff_view {
+            ctx.input(|i| {
+                if i.key_pressed(egui::Key::F8) {
+                    self.pending_diff_next = true;
+                }
+                if i.key_pressed(egui::Key::F7) {
+                    self.pending_diff_prev = true;
+                }
+            });
+        }
+        ctx.input(|i| {
+            if i.key_pressed(egui::Key::F3) {
+                self.pending_find_next = true;
+            }
+            if i.key_pressed(egui::Key::F4) {
+                self.pending_find_prev = true;
+            }
+            if self.keybindings.is_command_pressed(&Command::NewTab, i) {
+                self.pending_new_tab = true;
+            }
+            if self.keybindings.is_command_pressed(&Command::OpenFile, i) {
+                self.pending_open_file = true;
+            }
+            if self.keybindings.is_command_pressed(&Command::Save, i) {
+                self.pending_save = true;
+            }
+            if self.keybindings.is_command_pressed(&Command::CloseTab, i) {
+                self.pending_close = true;
+            }
+            if self.keybindings.is_command_pressed(&Command::Find, i) {
+                self.pending_find = true;
+            }
+            if self.keybindings.is_command_pressed(&Command::Replace, i) {
+                self.pending_replace = true;
+            }
+            if self.keybindings.is_command_pressed(&Command::GotoLine, i) {
+                self.pending_goto = true;
+            }
+            if self
+                .keybindings
+                .is_command_pressed(&Command::ToggleDiffView, i)
+            {
+                self.pending_diff = true;
+            }
+            if self.keybindings.is_command_pressed(&Command::Undo, i) {
+                self.pending_undo = true;
+            }
+            if self.keybindings.is_command_pressed(&Command::Redo, i) {
+                self.pending_redo = true;
+            }
+            if self.keybindings.is_command_pressed(&Command::SelectAll, i) {
+                self.pending_select_all = true;
+            }
+            if self.keybindings.is_command_pressed(&Command::NextTab, i) {
+                self.pending_next_tab = true;
+            }
+            if self.keybindings.is_command_pressed(&Command::PrevTab, i) {
+                self.pending_prev_tab = true;
+            }
+            if self.keybindings.is_command_pressed(&Command::Palette, i) {
+                self.pending_command_palette = true;
+            }
+            if self
+                .keybindings
+                .is_command_pressed(&Command::FindInFiles, i)
+            {
+                self.pending_find_in_files = true;
+            }
+            if self.keybindings.is_command_pressed(&Command::Cut, i) {
+                self.pending_cut = true;
+            }
+            if self.keybindings.is_command_pressed(&Command::Copy, i) {
+                self.pending_copy = true;
+            }
+            if self.keybindings.is_command_pressed(&Command::Paste, i) {
+                self.pending_paste = true;
+            }
+            if self.keybindings.is_command_pressed(&Command::SaveAs, i) {
+                self.pending_save_as = true;
+            }
+            if self.keybindings.is_command_pressed(&Command::SaveAll, i) {
+                self.pending_save_all = true;
+            }
+            if self
+                .keybindings
+                .is_command_pressed(&Command::ToggleSidebar, i)
+            {
+                self.pending_toggle_sidebar = true;
+            }
+            if self.keybindings.is_command_pressed(&Command::Exit, i) {
+                self.pending_exit = true;
+            }
+        });
+    }
+}
+
+/// Load system CJK fonts so Chinese characters render correctly.
+fn setup_cjk_fonts(cc: &eframe::CreationContext<'_>) {
+    #[cfg(target_os = "macos")]
+    {
+        let font_paths = [
+            "/System/Library/Fonts/PingFang.ttc",
+            "/System/Library/Fonts/STHeiti Light.ttc",
+            "/Library/Fonts/Arial Unicode.ttf",
+        ];
+        for path in font_paths {
+            if let Ok(data) = std::fs::read(path) {
+                let mut fonts = egui::FontDefinitions::default();
+                fonts
+                    .font_data
+                    .insert("cjk".to_owned(), egui::FontData::from_owned(data));
+                fonts
+                    .families
+                    .entry(egui::FontFamily::Proportional)
+                    .or_default()
+                    .insert(0, "cjk".to_owned());
+                fonts
+                    .families
+                    .entry(egui::FontFamily::Monospace)
+                    .or_default()
+                    .insert(0, "cjk".to_owned());
+                cc.egui_ctx.set_fonts(fonts);
+                log::info!("Loaded CJK font from {}", path);
+                return;
+            }
+        }
+        log::warn!("No CJK system font found; Chinese may not render correctly");
+    }
+}
+
+impl eframe::App for RustpadApp {
+    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        self.handle_close_request(ctx);
+        self.sync_theme(ctx);
+
+        // Save prompts block interaction but the normal (bright) UI still renders
+        // behind them, so the window keeps the app's light styling.
+        let blocking_dialog = self.show_quit_unsaved_dialog || self.show_unsaved_dialog;
+
+        if !blocking_dialog {
+            self.collect_shortcuts(ctx);
+            self.process_pending_actions();
+        }
+        self.update_status_bar();
+        self.auto_save_check();
+
+        // Keep minimap visibility in sync with preferences.
+        self.minimap.enabled = self.config.ui.show_minimap;
+
+        crate::ui::menu::show(self, ctx);
+        crate::ui::toolbar::show(self, ctx);
+        crate::ui::diff_toolbar::show(self, ctx);
+        crate::ui::tab_bar::show(self, ctx);
+        crate::ui::sidebar::show(self, ctx);
+        crate::ui::minimap::show(self, ctx);
+        crate::ui::editor_view::show(self, ctx);
+        // Search dialog must render after the editor so it stays on top and keeps focus.
+        crate::ui::search_panel::show(self, ctx);
+        crate::ui::search_panel::show_cross_file_search(self, ctx);
+        crate::ui::status_bar::show(self, ctx);
+        crate::ui::search_panel::show_results_panel(self, ctx);
+        crate::ui::diff_view::show(self, ctx);
+        crate::ui::dialogs::show_non_blocking(self, ctx);
+
+        // Blocking save prompts render last, on top of the bright UI.
+        if self.show_quit_unsaved_dialog {
+            crate::ui::dialogs::show_quit_unsaved_dialog(self, ctx);
+        }
+        if self.show_unsaved_dialog {
+            crate::ui::dialogs::show_unsaved_dialog(self, ctx);
+        }
+
+        // Native file dialogs must run after UI rendering (macOS requirement).
+        if self.pending_open_file {
+            self.pending_open_file = false;
+            self.open_file_dialog();
+        }
+
+        if self.pending_compare_files {
+            self.pending_compare_files = false;
+            self.compare_files_dialog();
+        }
+
+        if self.pending_compare_current {
+            self.pending_compare_current = false;
+            self.compare_current_with_dialog();
+        }
+
+        if self.pending_exit {
+            self.pending_exit = false;
+            self.request_exit(ctx);
+        }
+
+        // Periodically persist session so reopening restores the last workspace.
+        if self.last_session_persist.elapsed().as_secs() >= 2 {
+            self.persist_session();
+            self.last_session_persist = std::time::Instant::now();
+        }
+    }
+
+    fn save(&mut self, _storage: &mut dyn eframe::Storage) {
+        log::info!("Saving application state...");
+        self.persist_session();
+        let _ = self.config.save();
+    }
+}
+
+fn copy_to_clipboard(text: &str) {
+    if let Ok(mut clipboard) = arboard::Clipboard::new() {
+        let _ = clipboard.set_text(text.to_string());
+    }
+}
+
+fn paste_from_clipboard() -> Option<String> {
+    arboard::Clipboard::new()
+        .ok()
+        .and_then(|mut c| c.get_text().ok())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_status_bar_default() {
+        let status = StatusBar::default();
+        assert_eq!(status.line, 0);
+        assert_eq!(status.column, 0);
+        assert!(status.encoding.is_empty());
+    }
+
+    #[test]
+    fn test_command_palette_default() {
+        let palette = CommandPalette::default();
+        assert!(!palette.visible);
+        assert!(palette.query.is_empty());
+        assert_eq!(palette.selected_index, 0);
+    }
+
+    #[test]
+    fn test_copy_paste_clipboard() {
+        let text = "Hello, RustPad!";
+        copy_to_clipboard(text);
+    }
+
+    #[test]
+    fn test_select_all_sets_full_range() {
+        let mut tab_manager = TabManager::new();
+        tab_manager
+            .active_mut()
+            .buffer
+            .insert_str(0, "hello\nworld");
+        let last_line = tab_manager.active().line_count().saturating_sub(1);
+        let last_col = tab_manager.active().buffer.line_len(last_line);
+        tab_manager.active_mut().selection =
+            Selection::new(Cursor::new(0, 0), Cursor::new(last_line, last_col));
+        tab_manager.active_mut().cursor = Cursor::new(last_line, last_col);
+        assert!(!tab_manager.active().selection.is_empty());
+        let norm = tab_manager.active().selection.normalized();
+        assert_eq!(norm.end.line, 1);
+        assert_eq!(norm.end.col, 5);
+    }
+}

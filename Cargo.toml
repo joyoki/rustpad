@@ -1,0 +1,76 @@
+[package]
+name = "rustpad"
+version = "0.1.0"
+edition = "2021"
+description = "A modern code editor built with Rust, inspired by Notepad++"
+license = "MIT"
+authors = ["RustPad Contributors"]
+repository = "https://github.com/rustpad/rustpad"
+
+[dependencies]
+# UI framework
+egui = "0.29"
+eframe = "0.29"
+
+# Syntax highlighting
+syntect = "5.2"
+
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+
+# File system
+dirs = "6"
+
+# Encoding
+encoding_rs = "0.8"
+
+# Text processing
+regex = "1"
+
+# Error handling
+anyhow = "1"
+thiserror = "2"
+
+# Logging
+log = "0.4"
+env_logger = "0.11"
+
+# Clipboard
+arboard = "3"
+
+# File dialogs
+rfd = "0.15"
+
+# macOS: disable winit's default menu so Cmd+Q reaches the app (lets us prompt
+# to save before quitting). Version must match eframe 0.29's winit (0.30).
+[target.'cfg(target_os = "macos")'.dependencies]
+winit = "0.30"
+
+[dev-dependencies]
+tempfile = "3"
+
+[profile.release]
+strip = true
+lto = true
+opt-level = 3
+codegen-units = 1
+
+[package.metadata.bundle]
+name = "RustPad"
+identifier = "com.rustpad.editor"
+icon = []
+version = "0.1.0"
+copyright = "2024-2026 RustPad Contributors"
+category = "Developer Tool"
+short_description = "A modern code editor with diff capabilities, inspired by Notepad++"
+long_description = """
+RustPad is a cross-platform code editor built in Rust with egui.
+Features include syntax highlighting, file diff comparison,
+macro recording, multi-tab editing, and more.
+"""
+osx_minimum_system_version = "10.15"

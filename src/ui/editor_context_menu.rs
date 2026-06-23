@@ -9,6 +9,7 @@ use crate::i18n::UiLanguage;
 struct CtxLabels {
     cut: &'static str,
     copy: &'static str,
+    copy_column: &'static str,
     paste: &'static str,
     delete: &'static str,
     select_all: &'static str,
@@ -48,6 +49,7 @@ struct CtxLabels {
 enum MenuAction {
     Cut,
     Copy,
+    CopyColumn,
     Paste,
     Delete,
     SelectAll,
@@ -75,6 +77,7 @@ fn labels(lang: &str) -> CtxLabels {
         CtxLabels {
             cut: "剪切",
             copy: "复制",
+            copy_column: "列复制",
             paste: "粘贴",
             delete: "删除",
             select_all: "全选",
@@ -112,6 +115,7 @@ fn labels(lang: &str) -> CtxLabels {
         CtxLabels {
             cut: "Cut",
             copy: "Copy",
+            copy_column: "Copy Column",
             paste: "Paste",
             delete: "Delete",
             select_all: "Select All",
@@ -152,6 +156,7 @@ fn dispatch_action(app: &mut RustpadApp, action: MenuAction) {
     match action {
         MenuAction::Cut => app.cut(),
         MenuAction::Copy => app.copy(),
+        MenuAction::CopyColumn => app.copy_column(),
         MenuAction::Paste => app.paste(),
         MenuAction::Delete => app.editor_delete(),
         MenuAction::SelectAll => app.select_all(),
@@ -203,6 +208,9 @@ pub fn show(app: &mut RustpadApp, ctx: &egui::Context) {
                     }
                     if ui.button(l.copy).clicked() {
                         pending_action = Some(MenuAction::Copy);
+                    }
+                    if ui.button(l.copy_column).clicked() {
+                        pending_action = Some(MenuAction::CopyColumn);
                     }
                 });
                 if ui.button(l.paste).clicked() {

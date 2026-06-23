@@ -9,7 +9,7 @@ pub fn show(app: &mut RustpadApp, ctx: &egui::Context) {
     let cursor_line = tab.cursor.line;
     let cursor_col = tab.cursor.col;
     let line_count = tab.line_count();
-    let encoding = format!("{:?}", tab.encoding);
+    let encoding = tab.encoding.status_label().to_string();
     let line_ending = format!("{:?}", tab.buffer.line_ending());
     let size = tab.buffer.len();
     let file_path = tab.file_path.clone();

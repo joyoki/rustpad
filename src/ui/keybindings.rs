@@ -112,10 +112,127 @@ impl KeyBinding {
         parts.push(&self.key);
         parts.join("+")
     }
+
+    pub fn egui_key_name(key: egui::Key) -> Option<&'static str> {
+        match key {
+            egui::Key::A => Some("A"),
+            egui::Key::B => Some("B"),
+            egui::Key::C => Some("C"),
+            egui::Key::D => Some("D"),
+            egui::Key::E => Some("E"),
+            egui::Key::F => Some("F"),
+            egui::Key::G => Some("G"),
+            egui::Key::H => Some("H"),
+            egui::Key::I => Some("I"),
+            egui::Key::J => Some("J"),
+            egui::Key::K => Some("K"),
+            egui::Key::L => Some("L"),
+            egui::Key::M => Some("M"),
+            egui::Key::N => Some("N"),
+            egui::Key::O => Some("O"),
+            egui::Key::P => Some("P"),
+            egui::Key::Q => Some("Q"),
+            egui::Key::R => Some("R"),
+            egui::Key::S => Some("S"),
+            egui::Key::T => Some("T"),
+            egui::Key::U => Some("U"),
+            egui::Key::V => Some("V"),
+            egui::Key::W => Some("W"),
+            egui::Key::X => Some("X"),
+            egui::Key::Y => Some("Y"),
+            egui::Key::Z => Some("Z"),
+            egui::Key::Tab => Some("Tab"),
+            egui::Key::Enter => Some("Enter"),
+            egui::Key::Escape => Some("Escape"),
+            egui::Key::F1 => Some("F1"),
+            egui::Key::F2 => Some("F2"),
+            egui::Key::F3 => Some("F3"),
+            egui::Key::F4 => Some("F4"),
+            egui::Key::F5 => Some("F5"),
+            egui::Key::F6 => Some("F6"),
+            egui::Key::F7 => Some("F7"),
+            egui::Key::F8 => Some("F8"),
+            egui::Key::F9 => Some("F9"),
+            egui::Key::F10 => Some("F10"),
+            egui::Key::F11 => Some("F11"),
+            egui::Key::F12 => Some("F12"),
+            egui::Key::Home => Some("Home"),
+            egui::Key::End => Some("End"),
+            egui::Key::PageUp => Some("PageUp"),
+            egui::Key::PageDown => Some("PageDown"),
+            _ => None,
+        }
+    }
+
+    /// Capture a shortcut from the current input frame (for rebinding UI).
+    pub fn capture_from_input(input: &egui::InputState) -> Option<Self> {
+        if input.key_pressed(egui::Key::Escape) {
+            return None;
+        }
+        let ctrl = input.modifiers.command || input.modifiers.ctrl;
+        let shift = input.modifiers.shift;
+        let alt = input.modifiers.alt;
+        for key in Self::capturable_keys() {
+            if input.key_pressed(*key) {
+                let name = Self::egui_key_name(*key)?;
+                return Some(Self::new(ctrl, shift, alt, name));
+            }
+        }
+        None
+    }
+
+    fn capturable_keys() -> &'static [egui::Key] {
+        &[
+            egui::Key::A,
+            egui::Key::B,
+            egui::Key::C,
+            egui::Key::D,
+            egui::Key::E,
+            egui::Key::F,
+            egui::Key::G,
+            egui::Key::H,
+            egui::Key::I,
+            egui::Key::J,
+            egui::Key::K,
+            egui::Key::L,
+            egui::Key::M,
+            egui::Key::N,
+            egui::Key::O,
+            egui::Key::P,
+            egui::Key::Q,
+            egui::Key::R,
+            egui::Key::S,
+            egui::Key::T,
+            egui::Key::U,
+            egui::Key::V,
+            egui::Key::W,
+            egui::Key::X,
+            egui::Key::Y,
+            egui::Key::Z,
+            egui::Key::Tab,
+            egui::Key::Enter,
+            egui::Key::F1,
+            egui::Key::F2,
+            egui::Key::F3,
+            egui::Key::F4,
+            egui::Key::F5,
+            egui::Key::F6,
+            egui::Key::F7,
+            egui::Key::F8,
+            egui::Key::F9,
+            egui::Key::F10,
+            egui::Key::F11,
+            egui::Key::F12,
+            egui::Key::Home,
+            egui::Key::End,
+            egui::Key::PageUp,
+            egui::Key::PageDown,
+        ]
+    }
 }
 
 /// Commands that can be bound to keys.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Command {
     NewTab,
     OpenFile,
@@ -127,6 +244,7 @@ pub enum Command {
     Redo,
     Cut,
     Copy,
+    CopyColumn,
     Paste,
     SelectAll,
     Find,
@@ -142,6 +260,70 @@ pub enum Command {
     MacroRecord,
     Preferences,
     Exit,
+}
+
+impl Command {
+    pub fn all() -> &'static [Command] {
+        &[
+            Command::NewTab,
+            Command::OpenFile,
+            Command::Save,
+            Command::SaveAs,
+            Command::SaveAll,
+            Command::CloseTab,
+            Command::Undo,
+            Command::Redo,
+            Command::Cut,
+            Command::Copy,
+            Command::CopyColumn,
+            Command::Paste,
+            Command::SelectAll,
+            Command::Find,
+            Command::Replace,
+            Command::GotoLine,
+            Command::FindInFiles,
+            Command::ToggleSidebar,
+            Command::ToggleMinimap,
+            Command::ToggleDiffView,
+            Command::Palette,
+            Command::NextTab,
+            Command::PrevTab,
+            Command::MacroRecord,
+            Command::Preferences,
+            Command::Exit,
+        ]
+    }
+
+    pub fn label(self, zh: bool) -> &'static str {
+        match self {
+            Self::NewTab => if zh { "新建标签" } else { "New Tab" },
+            Self::OpenFile => if zh { "打开文件" } else { "Open File" },
+            Self::Save => if zh { "保存" } else { "Save" },
+            Self::SaveAs => if zh { "另存为" } else { "Save As" },
+            Self::SaveAll => if zh { "全部保存" } else { "Save All" },
+            Self::CloseTab => if zh { "关闭标签" } else { "Close Tab" },
+            Self::Undo => if zh { "撤销" } else { "Undo" },
+            Self::Redo => if zh { "重做" } else { "Redo" },
+            Self::Cut => if zh { "剪切" } else { "Cut" },
+            Self::Copy => if zh { "复制" } else { "Copy" },
+            Self::CopyColumn => if zh { "列复制" } else { "Copy Column" },
+            Self::Paste => if zh { "粘贴" } else { "Paste" },
+            Self::SelectAll => if zh { "全选" } else { "Select All" },
+            Self::Find => if zh { "查找" } else { "Find" },
+            Self::Replace => if zh { "替换" } else { "Replace" },
+            Self::GotoLine => if zh { "跳转到行" } else { "Go to Line" },
+            Self::FindInFiles => if zh { "在文件中查找" } else { "Find in Files" },
+            Self::ToggleSidebar => if zh { "切换侧边栏" } else { "Toggle Sidebar" },
+            Self::ToggleMinimap => if zh { "切换缩略图" } else { "Toggle Minimap" },
+            Self::ToggleDiffView => if zh { "对比文件" } else { "Compare Files" },
+            Self::Palette => if zh { "命令面板" } else { "Command Palette" },
+            Self::NextTab => if zh { "下一标签" } else { "Next Tab" },
+            Self::PrevTab => if zh { "上一标签" } else { "Previous Tab" },
+            Self::MacroRecord => if zh { "宏录制" } else { "Macro Recording" },
+            Self::Preferences => if zh { "首选项" } else { "Preferences" },
+            Self::Exit => if zh { "退出" } else { "Exit" },
+        }
+    }
 }
 
 /// Manages all keybindings.
@@ -172,6 +354,10 @@ impl KeyBindings {
         bindings.insert(Command::Redo, vec![KeyBinding::new(true, false, false, "Y")]);
         bindings.insert(Command::Cut, vec![KeyBinding::new(true, false, false, "X")]);
         bindings.insert(Command::Copy, vec![KeyBinding::new(true, false, false, "C")]);
+        bindings.insert(
+            Command::CopyColumn,
+            vec![KeyBinding::new(false, true, true, "C")],
+        );
         bindings.insert(Command::Paste, vec![KeyBinding::new(true, false, false, "V")]);
         bindings.insert(Command::SelectAll, vec![KeyBinding::new(true, false, false, "A")]);
         bindings.insert(Command::Find, vec![KeyBinding::new(true, false, false, "F")]);
@@ -213,6 +399,10 @@ impl KeyBindings {
         ]);
         bindings.insert(Command::Cut, vec![KeyBinding::new(true, false, false, "X")]);
         bindings.insert(Command::Copy, vec![KeyBinding::new(true, false, false, "C")]);
+        bindings.insert(
+            Command::CopyColumn,
+            vec![KeyBinding::new(false, true, true, "C")],
+        );
         bindings.insert(Command::Paste, vec![KeyBinding::new(true, false, false, "V")]);
         bindings.insert(Command::SelectAll, vec![KeyBinding::new(true, false, false, "A")]);
         bindings.insert(Command::Find, vec![KeyBinding::new(true, false, false, "F")]);
@@ -238,7 +428,28 @@ impl KeyBindings {
         }
     }
 
-    /// Check for a specific command being pressed.
+    /// Replace bindings for a command.
+    pub fn set_binding(&mut self, command: Command, binding: KeyBinding) {
+        self.bindings.insert(command, vec![binding]);
+    }
+
+    /// Apply a preset scheme.
+    pub fn apply_scheme(&mut self, scheme: KeyScheme) {
+        let fresh = match scheme {
+            KeyScheme::NotepadPP => Self::notepad_pp(),
+            KeyScheme::VSCode => Self::vscode(),
+        };
+        self.scheme = scheme;
+        self.bindings = fresh.bindings;
+    }
+
+    pub fn primary_display(&self, command: &Command) -> String {
+        self.bindings
+            .get(command)
+            .and_then(|v| v.first())
+            .map(|b| b.display())
+            .unwrap_or_else(|| "—".to_string())
+    }
     pub fn is_command_pressed(&self, command: &Command, input: &egui::InputState) -> bool {
         if let Some(bindings) = self.bindings.get(command) {
             bindings.iter().any(|b| b.matches(input))

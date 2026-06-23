@@ -2,11 +2,14 @@ use eframe::egui;
 use eframe::epaint::Color32;
 
 use crate::app::RustpadApp;
+use crate::editor::EncodingProfile;
 use crate::i18n::{self, UiLanguage};
 
 /// Show non-blocking dialogs (preferences, about, goto line).
 pub fn show_non_blocking(app: &mut RustpadApp, ctx: &egui::Context) {
     show_goto_line_dialog(app, ctx);
+    show_batch_encoding_dialog(app, ctx);
+    crate::ui::keybindings_dialog::show(app, ctx);
     show_about_dialog(app, ctx);
     show_preferences_dialog(app, ctx);
     show_html_preview_dialog(app, ctx);
@@ -55,6 +58,48 @@ fn show_goto_line_dialog(app: &mut RustpadApp, ctx: &egui::Context) {
     app.show_goto_line = open;
 }
 
+fn show_batch_encoding_dialog(app: &mut RustpadApp, ctx: &egui::Context) {
+    if !app.show_batch_encoding {
+        return;
+    }
+
+    let t = app.tr();
+    let mut open = app.show_batch_encoding;
+    let mut chosen: Option<EncodingProfile> = None;
+    let mut should_close = false;
+
+    egui::Window::new(t.dlg_batch_encoding)
+        .collapsible(false)
+        .resizable(false)
+        .open(&mut open)
+        .show(ctx, |ui| {
+            ui.label(t.enc_batch_prompt);
+            ui.separator();
+            for profile in EncodingProfile::MAIN
+                .iter()
+                .chain(EncodingProfile::MORE.iter())
+            {
+                if ui.button(profile.display_name()).clicked() {
+                    chosen = Some(*profile);
+                    should_close = true;
+                }
+            }
+            ui.separator();
+            if ui.button(t.btn_cancel).clicked() {
+                should_close = true;
+            }
+        });
+
+    if should_close {
+        open = false;
+    }
+
+    app.show_batch_encoding = open;
+    if let Some(profile) = chosen {
+        app.batch_convert_encoding(profile);
+    }
+}
+
 fn show_about_dialog(app: &mut RustpadApp, ctx: &egui::Context) {
     if !app.show_about {
         return;
@@ -71,6 +116,20 @@ fn show_about_dialog(app: &mut RustpadApp, ctx: &egui::Context) {
                 ui.heading("RustPad");
                 ui.label(t.about_tagline);
                 ui.label(format!("Version {}", env!("CARGO_PKG_VERSION")));
+                ui.horizontal(|ui| {
+                    ui.label(t.about_project);
+                    ui.hyperlink_to(
+                        "https://github.com/joyoki/rustpad",
+                        "https://github.com/joyoki/rustpad",
+                    );
+                });
+                ui.horizontal(|ui| {
+                    ui.label(t.about_releases);
+                    ui.hyperlink_to(
+                        "https://github.com/joyoki/rustpad/releases",
+                        "https://github.com/joyoki/rustpad/releases",
+                    );
+                });
                 ui.separator();
                 ui.label(t.about_powered);
                 ui.label(t.about_syntax);

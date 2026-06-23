@@ -36,6 +36,8 @@ pub struct Locale {
     pub menu_file: &'static str,
     pub menu_edit: &'static str,
     pub menu_view: &'static str,
+    pub menu_encoding: &'static str,
+    pub menu_settings: &'static str,
     pub menu_tools: &'static str,
     pub menu_help: &'static str,
     pub file_new: &'static str,
@@ -56,6 +58,7 @@ pub struct Locale {
     pub edit_find: &'static str,
     pub edit_replace: &'static str,
     pub edit_goto_line: &'static str,
+    pub edit_copy_column: &'static str,
     pub view_toggle_sidebar: &'static str,
     pub view_toggle_minimap: &'static str,
     pub view_language: &'static str,
@@ -66,6 +69,8 @@ pub struct Locale {
     pub tools_compare: &'static str,
     pub tools_macro: &'static str,
     pub tools_preferences: &'static str,
+    pub settings_preferences: &'static str,
+    pub settings_keybindings: &'static str,
     pub help_about: &'static str,
     // Toolbar
     pub tb_new: &'static str,
@@ -75,6 +80,7 @@ pub struct Locale {
     pub tb_redo: &'static str,
     pub tb_find: &'static str,
     pub tb_compare: &'static str,
+    pub tb_encoding: &'static str,
     pub tip_new: &'static str,
     pub tip_open: &'static str,
     pub tip_save: &'static str,
@@ -82,6 +88,7 @@ pub struct Locale {
     pub tip_redo: &'static str,
     pub tip_find: &'static str,
     pub tip_compare: &'static str,
+    pub tip_encoding: &'static str,
     pub tip_font_dec: &'static str,
     pub tip_font_inc: &'static str,
     // Dialogs
@@ -108,6 +115,8 @@ pub struct Locale {
     pub about_tagline: &'static str,
     pub about_powered: &'static str,
     pub about_syntax: &'static str,
+    pub about_project: &'static str,
+    pub about_releases: &'static str,
     pub btn_save: &'static str,
     pub btn_dont_save: &'static str,
     pub btn_cancel: &'static str,
@@ -157,6 +166,25 @@ pub struct Locale {
     pub diff_close: &'static str,
     pub tip_diff_prev: &'static str,
     pub tip_diff_next: &'static str,
+    // Encoding menu
+    pub enc_open_section: &'static str,
+    pub enc_convert_section: &'static str,
+    pub enc_more: &'static str,
+    pub enc_convert_more: &'static str,
+    pub enc_batch_convert: &'static str,
+    pub dlg_batch_encoding: &'static str,
+    pub enc_batch_prompt: &'static str,
+    // Keybindings dialog
+    pub dlg_keybindings: &'static str,
+    pub kb_command_col: &'static str,
+    pub kb_shortcut_col: &'static str,
+    pub kb_change: &'static str,
+    pub kb_reset: &'static str,
+    pub kb_scheme: &'static str,
+    pub kb_press_key: &'static str,
+    pub kb_conflicts: &'static str,
+    pub kb_saved: &'static str,
+    pub tip_column_select: &'static str,
 }
 
 static LOCALE_EN: Locale = Locale {
@@ -164,6 +192,8 @@ static LOCALE_EN: Locale = Locale {
     menu_file: "File",
     menu_edit: "Edit",
     menu_view: "View",
+    menu_encoding: "Encoding",
+    menu_settings: "Settings",
     menu_tools: "Tools",
     menu_help: "Help",
     file_new: "New  Ctrl+N",
@@ -184,6 +214,7 @@ static LOCALE_EN: Locale = Locale {
     edit_find: "Find...  Ctrl+F",
     edit_replace: "Replace...  Ctrl+H",
     edit_goto_line: "Go to Line...  Ctrl+G",
+    edit_copy_column: "Copy Column  Alt+Shift+C",
     view_toggle_sidebar: "Toggle Sidebar  Ctrl+B",
     view_toggle_minimap: "Toggle Minimap",
     view_language: "Language",
@@ -194,6 +225,8 @@ static LOCALE_EN: Locale = Locale {
     tools_compare: "Compare Files...  Ctrl+D",
     tools_macro: "Macro Recording",
     tools_preferences: "Preferences...",
+    settings_preferences: "Preferences...",
+    settings_keybindings: "Keyboard Shortcuts...",
     help_about: "About RustPad",
     tb_new: "📄 New",
     tb_open: "📂 Open",
@@ -202,6 +235,7 @@ static LOCALE_EN: Locale = Locale {
     tb_redo: "↪ Redo",
     tb_find: "🔍 Find",
     tb_compare: "⇔ Compare",
+    tb_encoding: "Encoding",
     tip_new: "New file (Ctrl+N)",
     tip_open: "Open file (Ctrl+O)",
     tip_save: "Save (Ctrl+S)",
@@ -209,6 +243,7 @@ static LOCALE_EN: Locale = Locale {
     tip_redo: "Redo (Ctrl+Y)",
     tip_find: "Find (Ctrl+F)",
     tip_compare: "Compare files (Ctrl+D)",
+    tip_encoding: "Open with / convert encoding",
     tip_font_dec: "Decrease font size",
     tip_font_inc: "Increase font size",
     dlg_preferences: "Preferences",
@@ -234,6 +269,8 @@ static LOCALE_EN: Locale = Locale {
     about_tagline: "A modern code editor built with Rust",
     about_powered: "Powered by egui + eframe",
     about_syntax: "Syntax highlighting by syntect",
+    about_project: "RustPad:",
+    about_releases: "Latest Release:",
     btn_save: "Save",
     btn_dont_save: "Don't Save",
     btn_cancel: "Cancel",
@@ -280,6 +317,23 @@ static LOCALE_EN: Locale = Locale {
     diff_close: "✖ Close Compare",
     tip_diff_prev: "Previous difference (F7)",
     tip_diff_next: "Next difference (F8)",
+    enc_open_section: "Open with encoding",
+    enc_convert_section: "Convert to encoding",
+    enc_more: "More…",
+    enc_convert_more: "Convert to more encodings",
+    enc_batch_convert: "Batch convert encoding",
+    dlg_batch_encoding: "Batch Convert Encoding",
+    enc_batch_prompt: "Convert all open tabs to:",
+    dlg_keybindings: "Keyboard Shortcuts",
+    kb_command_col: "Command",
+    kb_shortcut_col: "Shortcut",
+    kb_change: "Change",
+    kb_reset: "Reset to Default",
+    kb_scheme: "Scheme",
+    kb_press_key: "Press a key combination… (Esc to cancel)",
+    kb_conflicts: "Conflicting shortcuts detected",
+    kb_saved: "Shortcuts saved",
+    tip_column_select: "Hold Alt and drag to select a column",
 };
 
 static LOCALE_ZH: Locale = Locale {
@@ -287,6 +341,8 @@ static LOCALE_ZH: Locale = Locale {
     menu_file: "文件",
     menu_edit: "编辑",
     menu_view: "视图",
+    menu_encoding: "编码",
+    menu_settings: "设置",
     menu_tools: "工具",
     menu_help: "帮助",
     file_new: "新建  Ctrl+N",
@@ -307,6 +363,7 @@ static LOCALE_ZH: Locale = Locale {
     edit_find: "查找...  Ctrl+F",
     edit_replace: "替换...  Ctrl+H",
     edit_goto_line: "跳转到行...  Ctrl+G",
+    edit_copy_column: "列复制  Alt+Shift+C",
     view_toggle_sidebar: "切换侧边栏  Ctrl+B",
     view_toggle_minimap: "切换缩略图",
     view_language: "语言",
@@ -317,6 +374,8 @@ static LOCALE_ZH: Locale = Locale {
     tools_compare: "对比文件...  Ctrl+D",
     tools_macro: "宏录制",
     tools_preferences: "首选项...",
+    settings_preferences: "首选项...",
+    settings_keybindings: "快捷键管理...",
     help_about: "关于 RustPad",
     tb_new: "📄 新建",
     tb_open: "📂 打开",
@@ -325,6 +384,7 @@ static LOCALE_ZH: Locale = Locale {
     tb_redo: "↪ 重做",
     tb_find: "🔍 查找",
     tb_compare: "⇔ 对比",
+    tb_encoding: "编码",
     tip_new: "新建文件 (Ctrl+N)",
     tip_open: "打开文件 (Ctrl+O)",
     tip_save: "保存 (Ctrl+S)",
@@ -332,6 +392,7 @@ static LOCALE_ZH: Locale = Locale {
     tip_redo: "重做 (Ctrl+Y)",
     tip_find: "查找 (Ctrl+F)",
     tip_compare: "对比文件 (Ctrl+D)",
+    tip_encoding: "使用指定编码打开 / 转换编码",
     tip_font_dec: "减小字号",
     tip_font_inc: "增大字号",
     dlg_preferences: "首选项",
@@ -357,6 +418,8 @@ static LOCALE_ZH: Locale = Locale {
     about_tagline: "用 Rust 打造的现代化代码编辑器",
     about_powered: "基于 egui + eframe",
     about_syntax: "语法高亮由 syntect 提供",
+    about_project: "RustPad 介绍：",
+    about_releases: "RustPad 最新版本：",
     btn_save: "保存",
     btn_dont_save: "不保存",
     btn_cancel: "取消",
@@ -403,12 +466,53 @@ static LOCALE_ZH: Locale = Locale {
     diff_close: "✖ 关闭对比",
     tip_diff_prev: "上一处差异 (F7)",
     tip_diff_next: "下一处差异 (F8)",
+    enc_open_section: "使用编码打开",
+    enc_convert_section: "转换为编码",
+    enc_more: "更多…",
+    enc_convert_more: "转换为更多编码",
+    enc_batch_convert: "批量转换编码",
+    dlg_batch_encoding: "批量转换编码",
+    enc_batch_prompt: "将所有打开的标签转换为：",
+    dlg_keybindings: "快捷键管理",
+    kb_command_col: "命令",
+    kb_shortcut_col: "快捷键",
+    kb_change: "更改",
+    kb_reset: "恢复默认",
+    kb_scheme: "方案",
+    kb_press_key: "请按下快捷键…（Esc 取消）",
+    kb_conflicts: "检测到快捷键冲突",
+    kb_saved: "快捷键已保存",
+    tip_column_select: "按住 Alt 并拖动以列选择",
 };
 
 pub fn locale(lang: &str) -> &'static Locale {
     match UiLanguage::parse(lang) {
         UiLanguage::En => &LOCALE_EN,
         UiLanguage::Zh => &LOCALE_ZH,
+    }
+}
+
+impl Locale {
+    fn is_zh(&self) -> bool {
+        std::ptr::eq(self, &LOCALE_ZH)
+    }
+
+    pub fn enc_open_with(&self, profile: crate::editor::EncodingProfile) -> String {
+        let name = profile.display_name();
+        if self.is_zh() {
+            format!("使用编码 {name} 打开")
+        } else {
+            format!("Open with {name}")
+        }
+    }
+
+    pub fn enc_convert_to(&self, profile: crate::editor::EncodingProfile) -> String {
+        let name = profile.display_name();
+        if self.is_zh() {
+            format!("转换为 {name} 编码")
+        } else {
+            format!("Convert to {name}")
+        }
     }
 }
 

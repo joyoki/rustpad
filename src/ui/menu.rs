@@ -1,6 +1,7 @@
 use eframe::egui;
 
 use crate::app::RustpadApp;
+use crate::ui::encoding_menu::{self, EncodingMenuAction};
 
 /// Render the top menu bar.
 pub fn show(app: &mut RustpadApp, ctx: &egui::Context) {
@@ -89,6 +90,11 @@ pub fn show(app: &mut RustpadApp, ctx: &egui::Context) {
                     app.show_goto_line = true;
                     ui.close_menu();
                 }
+                ui.separator();
+                if ui.button(t.edit_copy_column).clicked() {
+                    app.copy_column();
+                    ui.close_menu();
+                }
             });
 
             ui.menu_button(t.menu_view, |ui| {
@@ -153,6 +159,12 @@ pub fn show(app: &mut RustpadApp, ctx: &egui::Context) {
                 }
             });
 
+            let mut enc_action = EncodingMenuAction::None;
+            ui.menu_button(t.menu_encoding, |ui| {
+                enc_action = encoding_menu::show_menu(ui, app);
+            });
+            encoding_menu::apply_action(app, enc_action);
+
             ui.menu_button(t.menu_tools, |ui| {
                 if ui.button(t.tools_compare).clicked() {
                     app.pending_compare_files = true;
@@ -162,9 +174,15 @@ pub fn show(app: &mut RustpadApp, ctx: &egui::Context) {
                     app.toggle_macro_recording();
                     ui.close_menu();
                 }
-                ui.separator();
-                if ui.button(t.tools_preferences).clicked() {
+            });
+
+            ui.menu_button(t.menu_settings, |ui| {
+                if ui.button(t.settings_preferences).clicked() {
                     app.show_preferences = true;
+                    ui.close_menu();
+                }
+                if ui.button(t.settings_keybindings).clicked() {
+                    crate::ui::keybindings_dialog::open_editor(app);
                     ui.close_menu();
                 }
             });

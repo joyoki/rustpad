@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use crate::config::AppConfig;
 use crate::config::theme::ThemeManager;
 use crate::diff::{DiffAlgorithm, DiffOptions, DiffResult, DiffEngine};
-use crate::editor::{Cursor, Selection, TabManager};
+use crate::editor::{Cursor, EncodingProfile, Selection, TabManager};
 use crate::highlight::Highlighter;
 use crate::search::{SearchEngine, SearchOptions};
 
@@ -92,7 +92,9 @@ pub struct RustpadApp {
     pub show_diff_view: bool,
     pub show_about: bool,
     pub show_preferences: bool,
+    pub show_keybindings: bool,
     pub show_goto_line: bool,
+    pub show_batch_encoding: bool,
     pub show_unsaved_dialog: bool,
     pub show_quit_unsaved_dialog: bool,
     pub show_cross_file_search: bool,
@@ -166,6 +168,9 @@ pub struct RustpadApp {
 
     // Keybindings
     pub keybindings: KeyBindings,
+    pub keybindings_edit: KeyBindings,
+    pub keybindings_recording: Option<Command>,
+    pub keybindings_status: String,
 
     // Theme manager
     pub theme_manager: ThemeManager,
@@ -276,7 +281,9 @@ impl RustpadApp {
             show_diff_view: false,
             show_about: false,
             show_preferences: false,
+            show_keybindings: false,
             show_goto_line: false,
+            show_batch_encoding: false,
             show_unsaved_dialog: false,
             show_quit_unsaved_dialog: false,
             show_cross_file_search: false,
@@ -321,7 +328,10 @@ impl RustpadApp {
             macro_recording: false,
             macro_actions: Vec::new(),
             auto_save: AutoSaveManager::default(),
-            keybindings: KeyBindings::default(),
+            keybindings: KeyBindings::load(),
+            keybindings_edit: KeyBindings::load(),
+            keybindings_recording: None,
+            keybindings_status: String::new(),
             theme_manager: ThemeManager::new(),
             pending_close_tab: None,
             pending_new_tab: false,
@@ -745,7 +755,7 @@ impl RustpadApp {
         let tab = self.tab_manager.active();
         self.status_bar.line = tab.cursor.line + 1;
         self.status_bar.column = tab.cursor.col + 1;
-        self.status_bar.encoding = format!("{:?}", tab.encoding);
+        self.status_bar.encoding = tab.encoding.status_label().to_string();
         self.status_bar.line_ending = format!("{:?}", tab.buffer.line_ending());
         self.status_bar.language = {
             let filename = tab
@@ -855,6 +865,48 @@ impl RustpadApp {
                 let _ = tab.save();
             }
         }
+    }
+
+    /// Re-read the active file from disk using the given encoding.
+    pub fn open_with_encoding(&mut self, profile: EncodingProfile) {
+        if self.tab_manager.active().file_path.is_none() {
+            return;
+        }
+        let idx = self.tab_manager.active_index();
+        match self.tab_manager.tabs_mut()[idx].reload_with_encoding(profile) {
+            Ok(()) => {
+                self.highlighter.clear_cache();
+                self.highlighter.invalidate_all();
+                self.transient_message = format!(
+                    "{}: {}",
+                    self.tr().enc_open_section,
+                    profile.display_name()
+                );
+            }
+            Err(e) => log::error!("Failed to reopen with encoding: {e}"),
+        }
+    }
+
+    /// Set the save encoding for the active tab (Unicode buffer unchanged).
+    pub fn convert_to_encoding(&mut self, profile: EncodingProfile) {
+        self.tab_manager.active_mut().convert_to_encoding(profile);
+        self.transient_message = format!(
+            "{}: {}",
+            self.tr().enc_convert_section,
+            profile.display_name()
+        );
+    }
+
+    /// Convert all open tabs to the given save encoding.
+    pub fn batch_convert_encoding(&mut self, profile: EncodingProfile) {
+        for tab in self.tab_manager.tabs_mut() {
+            tab.convert_to_encoding(profile);
+        }
+        self.transient_message = format!(
+            "{}: {}",
+            self.tr().enc_batch_convert,
+            profile.display_name()
+        );
     }
 
     /// Save every dirty tab before quitting. Returns false if the user cancels.
@@ -991,10 +1043,22 @@ impl RustpadApp {
         if selection.is_empty() {
             return;
         }
-        if let Some(text) = self.get_selected_text_from(selection) {
-            copy_to_clipboard(&text);
-            let tab = self.tab_manager.active();
-            let (start, end) = selection.to_byte_range(&tab.buffer);
+        let tab = self.tab_manager.active();
+        let text = if tab.column_selection {
+            crate::editor::column_selection::extract_text(&tab.buffer, &selection)
+        } else if let Some(t) = self.get_selected_text_from(selection) {
+            t
+        } else {
+            return;
+        };
+        copy_to_clipboard(&text);
+        let tab = self.tab_manager.active();
+        let (start, end) = if tab.column_selection {
+            (0, 0)
+        } else {
+            selection.to_byte_range(&tab.buffer)
+        };
+        if !tab.column_selection {
             self.clipboard_marks = crate::editor::context_actions::marks_within_char_range(
                 &tab.editor_extras,
                 &tab.buffer,
@@ -1002,6 +1066,22 @@ impl RustpadApp {
                 end,
             );
         }
+    }
+
+    /// Copy rectangular column text from the current selection.
+    pub fn copy_column(&mut self) {
+        self.restore_context_menu_selection_if_needed();
+        let selection = self.effective_context_selection();
+        if selection.is_empty() {
+            return;
+        }
+        let tab = self.tab_manager.active();
+        let text = crate::editor::column_selection::extract_text(&tab.buffer, &selection);
+        if text.is_empty() {
+            return;
+        }
+        copy_to_clipboard(&text);
+        self.transient_message = self.tr().edit_copy_column.to_string();
     }
 
     /// Paste from clipboard.
@@ -1537,7 +1617,9 @@ impl RustpadApp {
         self.show_search
             || self.show_cross_file_search
             || self.show_goto_line
+            || self.show_batch_encoding
             || self.show_preferences
+            || self.show_keybindings
             || self.show_about
             || self.show_unsaved_dialog
             || self.show_quit_unsaved_dialog
@@ -2111,6 +2193,9 @@ impl RustpadApp {
             }
             if self.keybindings.is_command_pressed(&Command::Copy, i) {
                 self.pending_copy = true;
+            }
+            if self.keybindings.is_command_pressed(&Command::CopyColumn, i) {
+                self.copy_column();
             }
             if self.keybindings.is_command_pressed(&Command::Paste, i) {
                 self.pending_paste = true;

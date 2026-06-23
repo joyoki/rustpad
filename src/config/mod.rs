@@ -66,7 +66,7 @@ impl Default for AppConfig {
     fn default() -> Self {
         Self {
             editor: EditorConfig {
-                font_size: 14.0,
+                font_size: 16.0,
                 tab_size: 4,
                 show_line_numbers: true,
                 word_wrap: false,
@@ -182,7 +182,7 @@ mod tests {
     fn test_default_config() {
         let cfg = AppConfig::default();
         assert_eq!(cfg.editor.tab_size, 4);
-        assert_eq!(cfg.editor.font_size, 14.0);
+        assert_eq!(cfg.editor.font_size, 16.0);
         assert_eq!(cfg.editor.font_family, "JetBrains Mono");
         assert_eq!(cfg.window.width, 1280.0);
         assert_eq!(cfg.window.height, 720.0);

@@ -6,6 +6,9 @@ use crate::editor::context_actions::{self, mark_line_color};
 use crate::editor::fold::FoldState;
 use crate::editor::Cursor;
 
+const LINE_NUMBER_FONT_SIZE: f32 = 14.0;
+const CONTENT_EXTENT_LINE_WIDTH: f32 = 2.0;
+
 /// Render the main editor view.
 pub fn show(app: &mut RustpadApp, ctx: &egui::Context) {
     // Hide the editor only when a diff is actually being shown. If diff mode is
@@ -31,7 +34,7 @@ pub fn show(app: &mut RustpadApp, ctx: &egui::Context) {
 
         let gutter_width = if show_line_numbers {
             let digits = format!("{}", line_count).len();
-            (digits as f32 * font_size * 0.6) + 16.0
+            (digits as f32 * LINE_NUMBER_FONT_SIZE * 0.65) + 8.0
         } else {
             0.0
         };
@@ -71,21 +74,7 @@ pub fn show(app: &mut RustpadApp, ctx: &egui::Context) {
         let gutter_fg = crate::config::theme::EditorTheme::to_color32(editor_theme.line_number_fg);
 
         ui.horizontal(|ui| {
-            if show_line_numbers {
-                draw_line_numbers(
-                    ui,
-                    line_count,
-                    scroll_offset,
-                    line_height,
-                    font_size,
-                    gutter_width,
-                    available_height,
-                    gutter_bg,
-                    gutter_fg,
-                    &line_marks,
-                    &app.tab_manager.active().editor_extras.fold_state,
-                );
-            }
+            ui.spacing_mut().item_spacing.x = 0.0;
 
             if let Some(start_line) = draw_fold_gutter(
                 ui,
@@ -104,6 +93,21 @@ pub fn show(app: &mut RustpadApp, ctx: &egui::Context) {
                     .fold_state
                     .toggle_fold(start_line);
                 ctx.request_repaint();
+            }
+
+            if show_line_numbers {
+                draw_line_numbers(
+                    ui,
+                    line_count,
+                    scroll_offset,
+                    line_height,
+                    gutter_width,
+                    available_height,
+                    gutter_bg,
+                    gutter_fg,
+                    &line_marks,
+                    &app.tab_manager.active().editor_extras.fold_state,
+                );
             }
 
             let fold_state = app.tab_manager.active().editor_extras.fold_state.clone();
@@ -163,7 +167,7 @@ pub fn show(app: &mut RustpadApp, ctx: &egui::Context) {
             // Mouse: click, drag-select, double-click word select (skip while menu open).
             if !app.show_context_menu {
                 if let Some(pointer_pos) = response.interact_pointer_pos() {
-                let shift = ui.input(|i| i.modifiers.shift);
+                let (shift, alt) = ui.input(|i| (i.modifiers.shift, i.modifiers.alt));
                 if response.drag_started() {
                     response.request_focus();
                     let click_line = line_from_pointer_y(
@@ -206,6 +210,7 @@ pub fn show(app: &mut RustpadApp, ctx: &egui::Context) {
                         app.tab_manager.active_mut().selection =
                             crate::editor::Selection::cursor(cursor);
                     }
+                    app.tab_manager.active_mut().column_selection = alt;
                     app.tab_manager.active_mut().cursor = cursor;
                 } else if response.dragged() {
                     let click_line = line_from_pointer_y(
@@ -278,9 +283,13 @@ pub fn show(app: &mut RustpadApp, ctx: &egui::Context) {
                             };
                             app.tab_manager.active_mut().selection =
                                 crate::editor::Selection::new(anchor, cursor);
+                            if alt {
+                                app.tab_manager.active_mut().column_selection = true;
+                            }
                         } else {
                             app.tab_manager.active_mut().selection =
                                 crate::editor::Selection::cursor(cursor);
+                            app.tab_manager.active_mut().column_selection = false;
                         }
                         app.tab_manager.active_mut().cursor = cursor;
                     }
@@ -339,8 +348,14 @@ pub fn show(app: &mut RustpadApp, ctx: &egui::Context) {
 
             // Draw selection highlight
             let selection = app.tab_manager.active().selection;
+            let column_mode = app.tab_manager.active().column_selection;
             if !selection.is_empty() {
                 let norm = selection.normalized();
+                let (col_start, col_end) = if column_mode {
+                    crate::editor::column_selection::column_col_range(&norm)
+                } else {
+                    (0, 0)
+                };
                 for i in 0..line_count {
                     if fold_state.is_line_hidden(i) || i < norm.start.line || i > norm.end.line {
                         continue;
@@ -359,8 +374,16 @@ pub fn show(app: &mut RustpadApp, ctx: &egui::Context) {
                         line_height,
                         current_scroll,
                     );
-                    let sel_start_col = if i == norm.start.line { norm.start.col } else { 0 };
-                    let sel_end_col = if i == norm.end.line {
+                    let sel_start_col = if column_mode {
+                        col_start
+                    } else if i == norm.start.line {
+                        norm.start.col
+                    } else {
+                        0
+                    };
+                    let sel_end_col = if column_mode {
+                        col_end
+                    } else if i == norm.end.line {
                         norm.end.col
                     } else {
                         app.tab_manager.active().buffer.line_len(i)
@@ -817,13 +840,71 @@ fn draw_fold_gutter(
     clicked_start
 }
 
+/// Y range of the orange content-extent line, clipped to the visible gutter viewport.
+fn content_extent_y_range(
+    origin_y: f32,
+    viewport_height: f32,
+    line_count: usize,
+    line_height: f32,
+    scroll_offset: f32,
+    fold_state: &FoldState,
+) -> Option<(f32, f32)> {
+    let visible_total = fold_state.visible_line_count(line_count);
+    if visible_total == 0 {
+        return None;
+    }
+    let content_top =
+        FoldState::visible_line_y(origin_y, 0, line_height, scroll_offset);
+    let last_vis = visible_total.saturating_sub(1);
+    let content_bottom = FoldState::visible_line_y(origin_y, last_vis, line_height, scroll_offset)
+        + line_height;
+    let y_start = content_top.max(origin_y);
+    let y_end = content_bottom.min(origin_y + viewport_height);
+    if y_end > y_start {
+        Some((y_start, y_end))
+    } else {
+        None
+    }
+}
+
+/// Notepad++-style orange vertical line: height follows document content.
+fn draw_content_extent_line(
+    painter: &egui::Painter,
+    x: f32,
+    origin_y: f32,
+    viewport_height: f32,
+    line_count: usize,
+    line_height: f32,
+    scroll_offset: f32,
+    fold_state: &FoldState,
+) {
+    let Some((y_start, y_end)) = content_extent_y_range(
+        origin_y,
+        viewport_height,
+        line_count,
+        line_height,
+        scroll_offset,
+        fold_state,
+    ) else {
+        return;
+    };
+    let orange = Color32::from_rgb(255, 140, 0);
+    painter.rect_filled(
+        egui::Rect::from_min_max(
+            egui::pos2(x - CONTENT_EXTENT_LINE_WIDTH, y_start),
+            egui::pos2(x, y_end),
+        ),
+        0.0,
+        orange,
+    );
+}
+
 #[allow(clippy::too_many_arguments)]
 fn draw_line_numbers(
     ui: &mut egui::Ui,
     line_count: usize,
     scroll_offset: f32,
     line_height: f32,
-    font_size: f32,
     gutter_width: f32,
     available_height: f32,
     gutter_bg: Color32,
@@ -872,12 +953,24 @@ fn draw_line_numbers(
         let line_num = format!("{:>width$}", i + 1, width = digits);
         let galley = painter.layout_no_wrap(
             line_num,
-            egui::FontId::monospace(font_size * 0.85),
+            egui::FontId::monospace(LINE_NUMBER_FONT_SIZE),
             gutter_fg,
         );
-        let num_x = origin.x + gutter_width - galley.size().x - 4.0;
+        let num_x = origin.x + gutter_width - galley.size().x - 2.0;
         painter.galley(egui::pos2(num_x, y), galley, Color32::TRANSPARENT);
     }
+
+    // Orange content-extent line (Notepad++ style): from line 1 to last line of content.
+    draw_content_extent_line(
+        painter,
+        origin.x + gutter_width,
+        origin.y,
+        available_height,
+        line_count,
+        line_height,
+        scroll_offset,
+        fold_state,
+    );
 }
 
 /// Handle all keyboard input for the editor.
@@ -893,10 +986,12 @@ fn handle_keyboard_input(app: &mut RustpadApp, ctx: &egui::Context) {
     let mut arrow_left = false;
     let mut arrow_right = false;
     let mut shift = false;
+    let mut alt = false;
     let mut text_input: Vec<String> = Vec::new();
 
     ctx.input(|i| {
         shift = i.modifiers.shift;
+        alt = i.modifiers.alt;
         enter_pressed = i.key_pressed(egui::Key::Enter);
         backspace_pressed = i.key_pressed(egui::Key::Backspace);
         delete_pressed = i.key_pressed(egui::Key::Delete);
@@ -935,6 +1030,7 @@ fn handle_keyboard_input(app: &mut RustpadApp, ctx: &egui::Context) {
     let move_cursor_with_selection = |app: &mut RustpadApp, new_cursor: Cursor, extend: bool| {
         let tab = app.tab_manager.active_mut();
         if extend {
+            tab.column_selection = alt;
             let anchor = if tab.selection.is_empty() {
                 tab.cursor
             } else {
@@ -942,6 +1038,7 @@ fn handle_keyboard_input(app: &mut RustpadApp, ctx: &egui::Context) {
             };
             tab.selection = crate::editor::Selection::new(anchor, new_cursor);
         } else {
+            tab.column_selection = false;
             tab.selection = crate::editor::Selection::cursor(new_cursor);
         }
         tab.cursor = new_cursor;

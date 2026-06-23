@@ -2,8 +2,10 @@ use std::path::PathBuf;
 
 pub mod autocomplete;
 pub mod buffer;
+pub mod column_selection;
 pub mod context_actions;
 pub mod cursor;
+pub mod encoding;
 pub mod file_io;
 pub mod fold;
 pub mod indent;
@@ -13,9 +15,10 @@ pub mod view;
 
 pub use buffer::TextBuffer;
 pub use cursor::{Cursor, Selection};
+pub use encoding::EncodingProfile;
 pub use tab::TabManager;
 
-/// Represents the encoding of a file.
+/// Legacy encoding enum (used by async file_io).
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum FileEncoding {
     #[default]
@@ -23,6 +26,30 @@ pub enum FileEncoding {
     Utf16Le,
     Utf16Be,
     Latin1,
+    Gbk,
+}
+
+impl FileEncoding {
+    pub fn from_profile(profile: EncodingProfile) -> Self {
+        match profile {
+            EncodingProfile::AnsiGbk => Self::Gbk,
+            EncodingProfile::Utf8 | EncodingProfile::Utf8Bom => Self::Utf8,
+            EncodingProfile::Utf16Le => Self::Utf16Le,
+            EncodingProfile::Utf16Be => Self::Utf16Be,
+            EncodingProfile::Latin1 => Self::Latin1,
+        }
+    }
+
+    pub fn to_profile(self, had_utf8_bom: bool) -> EncodingProfile {
+        match self {
+            Self::Gbk => EncodingProfile::AnsiGbk,
+            Self::Utf16Le => EncodingProfile::Utf16Le,
+            Self::Utf16Be => EncodingProfile::Utf16Be,
+            Self::Latin1 => EncodingProfile::Latin1,
+            Self::Utf8 if had_utf8_bom => EncodingProfile::Utf8Bom,
+            Self::Utf8 => EncodingProfile::Utf8,
+        }
+    }
 }
 
 /// Represents a single undo/redo action (Command pattern).
@@ -83,51 +110,15 @@ pub fn detect_line_ending(text: &str) -> LineEnding {
     }
 }
 
-/// Detect file encoding from raw bytes.
-pub fn detect_encoding(bytes: &[u8]) -> FileEncoding {
-    if bytes.len() >= 3 && bytes[..3] == [0xEF, 0xBB, 0xBF] {
-        return FileEncoding::Utf8;
-    }
-    if bytes.len() >= 2 && bytes[..2] == [0xFF, 0xFE] {
-        return FileEncoding::Utf16Le;
-    }
-    if bytes.len() >= 2 && bytes[..2] == [0xFE, 0xFF] {
-        return FileEncoding::Utf16Be;
-    }
-    if std::str::from_utf8(bytes).is_ok() {
-        return FileEncoding::Utf8;
-    }
-    FileEncoding::Latin1
-}
-
 /// Read a file into a UTF-8 string, handling various encodings.
-pub fn read_file_to_string(path: &PathBuf) -> anyhow::Result<(String, FileEncoding, LineEnding)> {
+pub fn read_file_to_string(
+    path: &PathBuf,
+) -> anyhow::Result<(String, EncodingProfile, LineEnding)> {
     let bytes = std::fs::read(path)?;
-    let encoding = detect_encoding(&bytes);
-    let text = match encoding {
-        FileEncoding::Utf8 => {
-            let start = if bytes.len() >= 3 && bytes[..3] == [0xEF, 0xBB, 0xBF] {
-                3
-            } else {
-                0
-            };
-            String::from_utf8_lossy(&bytes[start..]).into_owned()
-        }
-        FileEncoding::Utf16Le => {
-            let (decoded, _, _) = encoding_rs::UTF_16LE.decode(&bytes);
-            decoded.into_owned()
-        }
-        FileEncoding::Utf16Be => {
-            let (decoded, _, _) = encoding_rs::UTF_16BE.decode(&bytes);
-            decoded.into_owned()
-        }
-        FileEncoding::Latin1 => {
-            let (decoded, _, _) = encoding_rs::WINDOWS_1252.decode(&bytes);
-            decoded.into_owned()
-        }
-    };
+    let profile = encoding::detect_encoding_profile(&bytes);
+    let text = profile.decode_bytes(&bytes);
     let line_ending = detect_line_ending(&text);
-    Ok((text, encoding, line_ending))
+    Ok((text, profile, line_ending))
 }
 
 #[cfg(test)]
@@ -146,12 +137,18 @@ mod tests {
 
     #[test]
     fn test_detect_encoding_utf8() {
-        assert_eq!(detect_encoding(b"hello world"), FileEncoding::Utf8);
+        assert_eq!(
+            encoding::detect_encoding_profile(b"hello world"),
+            EncodingProfile::Utf8
+        );
     }
 
     #[test]
     fn test_detect_encoding_utf8_bom() {
         let bytes = [0xEF, 0xBB, 0xBF, b'h', b'i'];
-        assert_eq!(detect_encoding(&bytes), FileEncoding::Utf8);
+        assert_eq!(
+            encoding::detect_encoding_profile(&bytes),
+            EncodingProfile::Utf8Bom
+        );
     }
 }

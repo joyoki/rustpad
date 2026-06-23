@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use super::buffer::TextBuffer;
 use super::context_actions::TabEditorExtras;
 use super::cursor::{Cursor, Selection};
-use super::{FileEncoding, read_file_to_string};
+use super::{EncodingProfile, read_file_to_string};
 
 /// Represents a single editor tab.
 pub struct Tab {
@@ -14,7 +14,8 @@ pub struct Tab {
     pub cursor: Cursor,
     pub selection: Selection,
     pub scroll_offset: f32,
-    pub encoding: FileEncoding,
+    pub encoding: EncodingProfile,
+    pub column_selection: bool,
     pub modified: bool,
     /// Whether this tab is newly created (not yet saved).
     pub is_new: bool,
@@ -36,7 +37,8 @@ impl Tab {
             cursor: Cursor::default(),
             selection: Selection::default(),
             scroll_offset: 0.0,
-            encoding: FileEncoding::default(),
+            encoding: EncodingProfile::default(),
+            column_selection: false,
             modified: false,
             is_new: true,
             syntax_override: None,
@@ -71,7 +73,10 @@ impl Tab {
     /// Save the current buffer to its file path.
     pub fn save(&mut self) -> anyhow::Result<()> {
         if let Some(path) = &self.file_path {
-            std::fs::write(path, self.buffer.text())?;
+            let bytes = self
+                .encoding
+                .encode_text(&self.buffer.text(), self.buffer.line_ending());
+            std::fs::write(path, bytes)?;
             self.buffer.mark_clean();
             self.modified = false;
         }
@@ -83,7 +88,10 @@ impl Tab {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        std::fs::write(path, self.buffer.text())?;
+        let bytes = self
+            .encoding
+            .encode_text(&self.buffer.text(), self.buffer.line_ending());
+        std::fs::write(path, bytes)?;
         self.file_path = Some(path.clone());
         self.title = path
             .file_name()
@@ -93,6 +101,34 @@ impl Tab {
         self.modified = false;
         self.is_new = false;
         Ok(())
+    }
+
+    /// Re-decode the on-disk file using a specific encoding profile.
+    pub fn reload_with_encoding(&mut self, profile: EncodingProfile) -> anyhow::Result<()> {
+        let path = self
+            .file_path
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("No file path"))?
+            .clone();
+        let bytes = std::fs::read(&path)?;
+        let text = profile.decode_bytes(&bytes);
+        let line_ending = super::detect_line_ending(&text);
+        self.buffer = TextBuffer::from_text(text, line_ending);
+        self.encoding = profile;
+        self.cursor = Cursor::default();
+        self.selection = Selection::default();
+        self.scroll_offset = 0.0;
+        self.modified = false;
+        self.buffer.mark_clean();
+        Ok(())
+    }
+
+    /// Change the target save encoding without altering buffer text.
+    pub fn convert_to_encoding(&mut self, profile: EncodingProfile) {
+        if self.encoding != profile {
+            self.encoding = profile;
+            self.modified = true;
+        }
     }
 
     /// Get the display title with a dirty indicator.

@@ -131,6 +131,10 @@ fn decode_bytes(bytes: &[u8], encoding: FileEncoding, has_bom: bool) -> anyhow::
             let (decoded, _, _) = encoding_rs::WINDOWS_1252.decode(bytes);
             Ok(decoded.into_owned())
         }
+        FileEncoding::Gbk => {
+            let (decoded, _, _) = encoding_rs::GBK.decode(bytes);
+            Ok(decoded.into_owned())
+        }
     }
 }
 
@@ -172,6 +176,10 @@ fn encode_string(
         }
         FileEncoding::Latin1 => {
             let (encoded, _, _) = encoding_rs::WINDOWS_1252.encode(content);
+            bytes.extend_from_slice(&encoded);
+        }
+        FileEncoding::Gbk => {
+            let (encoded, _, _) = encoding_rs::GBK.encode(content);
             bytes.extend_from_slice(&encoded);
         }
     }

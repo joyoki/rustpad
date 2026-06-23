@@ -13,7 +13,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## English
 
-### [0.1.2] - 2026-06-23
+### [Unreleased]
+
+#### Added
+
+- **Encoding menu** (menu bar): open with encoding, convert to encoding, and batch convert for ANSI/GBK, UTF-8, UTF-8 BOM, UTF-16, and more.
+- **Settings menu** with **Preferences** and **Keyboard Shortcuts** editor (Notepad++ / VS Code presets, rebind keys, conflict detection).
+- **Column selection and copy**: Alt+drag rectangular selection, column copy via menu/shortcut, and context menu entry.
+- **Content extent line**: orange vertical guide on the line-number gutter showing how many lines have content (Notepad++ style).
+- **About dialog** links to the GitHub repository and latest releases.
+
+#### Changed
+
+- Default editor font size increased to **16px**; line numbers use a fixed **14px** font.
+- Fold gutter moved left of line numbers so line numbers sit flush against the editor.
+- Save/save-as now writes files using the tab's selected encoding profile.
+
+### [0.1.2](https://github.com/joyoki/rustpad/compare/v0.1.1...v0.1.2) - 2026-06-23
 
 #### Added
 
@@ -38,7 +54,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Context menu **Fold Current** toggles the block at the cursor (consistent with gutter clicks).
 - Open-sourced on GitHub: [joyoki/rustpad](https://github.com/joyoki/rustpad).
 
-### [0.1.1] - 2026-06-23
+### [0.1.1](https://github.com/joyoki/rustpad/releases/tag/v0.1.1) - 2026-06-23
 
 #### Added
 
@@ -48,7 +64,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## 中文
 
-### [0.1.2] - 2026-06-23
+### [未发布]
+
+#### 新增
+
+- **编码菜单**（菜单栏）：使用指定编码打开、转换为指定编码、批量转换，支持 ANSI/GBK、UTF-8、UTF-8 BOM、UTF-16 等。
+- **设置菜单**：包含**首选项**与**快捷键管理**（Notepad++ / VS Code 方案、自定义按键、冲突检测）。
+- **列选择与列复制**：Alt+拖动矩形列选、菜单/快捷键列复制、右键菜单入口。
+- **内容长度竖线**：行号区右侧橙色竖线，标示已写入内容的行数范围（Notepad++ 风格）。
+- **关于对话框**增加 GitHub 仓库与最新版本下载链接。
+
+#### 变更
+
+- 默认编辑字号调整为 **16px**；行号固定 **14px** 字体。
+- 折叠栏移至行号左侧，行号与编辑区紧挨显示。
+- 保存/另存为按标签页所选编码配置写入文件。
+
+### [0.1.2](https://github.com/joyoki/rustpad/compare/v0.1.1...v0.1.2) - 2026-06-23
 
 #### 新增
 
@@ -73,7 +105,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 右键菜单 **折叠当前** 改为切换当前块折叠状态（与点击折叠栏一致）。
 - 已在 GitHub 开源：[joyoki/rustpad](https://github.com/joyoki/rustpad)。
 
-### [0.1.1] - 2026-06-23
+### [0.1.1](https://github.com/joyoki/rustpad/releases/tag/v0.1.1) - 2026-06-23
 
 #### 新增
 
@@ -81,5 +113,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-[0.1.2]: https://github.com/joyoki/rustpad/compare/v0.1.1...v0.1.2
-[0.1.1]: https://github.com/joyoki/rustpad/releases/tag/v0.1.1

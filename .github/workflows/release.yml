@@ -133,7 +133,7 @@ jobs:
           ln -s /Applications "${STAGING}/Applications"
           hdiutil create -volname "${APP_NAME}" -srcfolder "${STAGING}" -ov -format UDZO "dist/rustpad-${TAG}-macos.dmg"
           rm -rf "${STAGING}"
-          cd dist && zip -r "rustpad-${TAG}-macos.app.zip" "${APP_NAME}.app"
+          (cd dist && zip -rq "rustpad-${TAG}-macos.app.zip" "${APP_NAME}.app")
           ls -lh dist/
 
       - name: Upload platform artifact

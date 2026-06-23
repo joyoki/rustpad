@@ -1,0 +1,26 @@
+pub mod command_palette;
+pub mod diff_navigator;
+pub mod diff_toolbar;
+pub mod diff_view;
+pub mod dialogs;
+pub mod editor_view;
+pub mod editor_widget;
+pub mod file_tree;
+pub mod keybindings;
+pub mod layout;
+pub mod menu;
+pub mod minimap;
+pub mod search_panel;
+pub mod sidebar;
+pub mod split_view;
+pub mod status_bar;
+pub mod tab_bar;
+pub mod toolbar;
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_ui_modules_compiles() {
+        assert!(true);
+    }
+}

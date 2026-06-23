@@ -1,0 +1,4 @@
+target/
+RustPad.app/
+*.dmg
+.DS_Store

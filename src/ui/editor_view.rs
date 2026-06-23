@@ -8,6 +8,8 @@ use crate::editor::Cursor;
 
 const LINE_NUMBER_FONT_SIZE: f32 = 14.0;
 const CONTENT_EXTENT_LINE_WIDTH: f32 = 2.0;
+/// Gap between line-number gutter (orange extent line) and the editor pane.
+const GUTTER_EDITOR_GAP: f32 = 2.0;
 
 /// Render the main editor view.
 pub fn show(app: &mut RustpadApp, ctx: &egui::Context) {
@@ -39,7 +41,12 @@ pub fn show(app: &mut RustpadApp, ctx: &egui::Context) {
             0.0
         };
         const FOLD_GUTTER_WIDTH: f32 = 16.0;
-        let total_gutter_width = gutter_width + FOLD_GUTTER_WIDTH;
+        let gutter_editor_gap = if show_line_numbers {
+            GUTTER_EDITOR_GAP
+        } else {
+            0.0
+        };
+        let total_gutter_width = gutter_width + FOLD_GUTTER_WIDTH + gutter_editor_gap;
 
         let available_width = ui.available_width() - total_gutter_width;
         let available_height = ui.available_height();
@@ -918,7 +925,7 @@ fn draw_line_numbers(
 
     let gutter_rect = egui::Rect::from_min_size(
         ui.cursor().left_top(),
-        egui::vec2(gutter_width, available_height),
+        egui::vec2(gutter_width + GUTTER_EDITOR_GAP, available_height),
     );
     ui.allocate_rect(gutter_rect, egui::Sense::hover());
 
@@ -956,14 +963,14 @@ fn draw_line_numbers(
             egui::FontId::monospace(LINE_NUMBER_FONT_SIZE),
             gutter_fg,
         );
-        let num_x = origin.x + gutter_width - galley.size().x - 2.0;
+        let num_x = origin.x + gutter_width - galley.size().x - 2.0 - GUTTER_EDITOR_GAP;
         painter.galley(egui::pos2(num_x, y), galley, Color32::TRANSPARENT);
     }
 
     // Orange content-extent line (Notepad++ style): from line 1 to last line of content.
     draw_content_extent_line(
         painter,
-        origin.x + gutter_width,
+        origin.x + gutter_width - GUTTER_EDITOR_GAP,
         origin.y,
         available_height,
         line_count,

@@ -3,6 +3,7 @@ pub mod diff_navigator;
 pub mod diff_toolbar;
 pub mod diff_view;
 pub mod dialogs;
+pub mod editor_context_menu;
 pub mod editor_view;
 pub mod editor_widget;
 pub mod file_tree;

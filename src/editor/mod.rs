@@ -2,8 +2,10 @@ use std::path::PathBuf;
 
 pub mod autocomplete;
 pub mod buffer;
+pub mod context_actions;
 pub mod cursor;
 pub mod file_io;
+pub mod fold;
 pub mod indent;
 pub mod macro_recorder;
 pub mod tab;

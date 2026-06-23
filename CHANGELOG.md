@@ -27,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Default editor font size increased to **16px**; line numbers use a fixed **14px** font.
 - Fold gutter moved left of line numbers so line numbers sit flush against the editor.
+- Line numbers and content-extent line shifted **2px** left for clearer separation from the editor pane.
 - Save/save-as now writes files using the tab's selected encoding profile.
 
 ### [0.1.2](https://github.com/joyoki/rustpad/compare/v0.1.1...v0.1.2) - 2026-06-23
@@ -78,6 +79,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - 默认编辑字号调整为 **16px**；行号固定 **14px** 字体。
 - 折叠栏移至行号左侧，行号与编辑区紧挨显示。
+- 行号与橙色内容竖线向左偏移 **2px**，与编辑区留出更清晰间距。
 - 保存/另存为按标签页所选编码配置写入文件。
 
 ### [0.1.2](https://github.com/joyoki/rustpad/compare/v0.1.1...v0.1.2) - 2026-06-23

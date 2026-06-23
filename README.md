@@ -1,22 +1,31 @@
 # RustPad
 
+[English](#english) · [中文](#中文)
+
 A modern, cross-platform code editor built with Rust, inspired by Notepad++ with integrated Beyond Compare-style file diff capabilities.
 
-## Features
+基于 Rust 的现代化跨平台文本/代码编辑器，灵感来自 Notepad++，并集成 Beyond Compare 风格的文件对比能力。
 
-### Core Editing
+---
+
+## English
+
+### Features
+
+#### Core Editing
 - Multi-tab text editing with unlimited undo/redo
 - Syntax highlighting via syntect (supports 100+ languages)
 - Smart auto-indentation
-- Code folding
+- Code folding with gutter icons and scope guides
 - Autocomplete engine
 - Macro recording and playback
 - Line numbers with current line highlight
 - Minimap overview
 - Split view (horizontal/vertical)
 - Configurable word wrap
+- Right-click color marks (background highlights)
 
-### File Diff (Beyond Compare style)
+#### File Diff (Beyond Compare style)
 - Side-by-side diff view with synchronized scrolling
 - Line-level, word-level, and character-level diff highlighting
 - Three diff algorithms: Myers, Patience, LCS
@@ -26,12 +35,12 @@ A modern, cross-platform code editor built with Rust, inspired by Notepad++ with
 - Export HTML diff reports
 - Diff navigation (heatmap, prev/next, jump to Nth)
 
-### Search
+#### Search
 - Find and Replace with regex support
 - Cross-file search (Find in Files)
 - Command palette (Ctrl+Shift+P)
 
-### File System
+#### File System
 - File explorer sidebar (tree view)
 - Encoding detection and conversion (UTF-8, UTF-16, Latin-1, etc.)
 - BOM handling
@@ -39,153 +48,197 @@ A modern, cross-platform code editor built with Rust, inspired by Notepad++ with
 - Auto-save with crash recovery
 - Session persistence
 
-### Customization
+#### Customization
 - 4 built-in themes: Dark, Light, Monokai, Solarized Dark
 - Custom theme support (JSON format in `~/.config/rustpad/themes/`)
 - Configurable keybindings with Notepad++ and VS Code presets
 - Font family and size settings
 - All settings persisted to `~/.config/rustpad/config.toml`
 
-### Cross-Platform
+#### Cross-Platform
 - macOS: native menu bar, .app bundle support
 - Windows: high DPI support, file association registration
 - Linux: full support via egui/eframe
 
-## Building
+### Building
 
-### Prerequisites
+#### Prerequisites
 
 - Rust 1.75+ (install via [rustup](https://rustup.rs/))
 - macOS: Xcode Command Line Tools
 - Windows: Visual Studio Build Tools
 
-### Quick Build
+#### Quick Build
 
 ```bash
-# Clone
-git clone https://github.com/rustpad/rustpad.git
+git clone https://github.com/joyoki/rustpad.git
 cd rustpad
-
-# Debug build
-cargo build
-
-# Release build
 cargo build --release
-
-# Run
 cargo run --release
 ```
 
-### Platform-Specific Packaging
+#### macOS packaging
 
-**macOS:**
 ```bash
-# Install cargo-bundle (optional, for .app bundle)
-cargo install cargo-bundle
-
-# Build script (creates .app and .dmg)
 chmod +x scripts/build.sh
 ./scripts/build.sh
 ```
 
-**Windows:**
-```powershell
-# Install cargo-bundle (optional, for MSI)
-cargo install cargo-bundle
+#### Windows packaging
 
-# Build script
+```powershell
 .\scripts\build.ps1
 ```
 
-### Using cargo-bundle directly
-
-```bash
-cargo bundle --release
-```
-
-Output:
-- macOS: `target/release/bundle/osx/RustPad.app`
-- Windows: `target/release/bundle/msi/`
-
-## Keyboard Shortcuts
-
-### Default (Notepad++ Compatible)
+### Keyboard Shortcuts (default)
 
 | Action | Shortcut |
 |--------|----------|
 | New Tab | Ctrl+N |
 | Open File | Ctrl+O |
 | Save | Ctrl+S |
-| Save As | Ctrl+Shift+S |
-| Close Tab | Ctrl+W |
-| Undo | Ctrl+Z |
-| Redo | Ctrl+Y |
-| Cut | Ctrl+X |
-| Copy | Ctrl+C |
-| Paste | Ctrl+V |
-| Select All | Ctrl+A |
 | Find | Ctrl+F |
 | Replace | Ctrl+H |
-| Go to Line | Ctrl+G |
-| Find in Files | Ctrl+Shift+F |
-| Compare Files | Ctrl+D |
-| Toggle Sidebar | Ctrl+B |
 | Command Palette | Ctrl+Shift+P |
-| Next Tab | Ctrl+Tab |
 
-### Custom Keybindings
+See the full table in the [中文](#键盘快捷键默认) section below or source docs.
 
-Create `~/.config/rustpad/keybindings.json` to customize shortcuts:
+### Contributing
 
-```json
-{
-  "scheme": "VSCode",
-  "bindings": {
-    "NewTab": [{"ctrl": true, "shift": false, "alt": false, "key": "N"}],
-    "Save": [{"ctrl": true, "shift": false, "alt": false, "key": "S"}]
-  }
-}
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/my-feature`)
+3. Run `cargo clippy -- -D warnings` and `cargo test`
+4. Submit a pull request
+
+### License
+
+MIT License. See [LICENSE](LICENSE) for details.
+
+---
+
+## 中文
+
+### 功能特性
+
+#### 核心编辑
+- 多标签页编辑，支持无限撤销/重做
+- 基于 syntect 的语法高亮（100+ 语言）
+- 智能自动缩进
+- 代码折叠（折叠栏图标 + 作用域竖线）
+- 自动补全引擎
+- 宏录制与回放
+- 行号与当前行高亮
+- 小地图（Minimap）概览
+- 分屏视图（水平/垂直）
+- 可配置自动换行
+- 右键颜色标记（文字背景色）
+
+#### 文件对比（Beyond Compare 风格）
+- 左右并排对比，滚动同步
+- 行级、词级、字符级差异高亮
+- 三种 Diff 算法：Myers、Patience、LCS
+- 可忽略空白、大小写、换行符差异
+- 文件夹对比与状态指示
+- 三方合并与冲突检测
+- 导出 HTML 对比报告
+- Diff 导航（热力图、上一条/下一条、跳转）
+
+#### 搜索
+- 查找与替换（支持正则）
+- 跨文件搜索（在文件中查找）
+- 命令面板（Ctrl+Shift+P）
+
+#### 文件系统
+- 侧边栏文件树
+- 编码检测与转换（UTF-8、UTF-16、Latin-1 等）
+- BOM 处理
+- 换行符规范化（LF/CRLF/CR）
+- 自动保存与崩溃恢复
+- 会话持久化
+
+#### 个性化
+- 4 套内置主题：Dark、Light、Monokai、Solarized Dark
+- 自定义主题（`~/.config/rustpad/themes/` 下的 JSON）
+- 可配置快捷键（Notepad++ / VS Code 预设）
+- 字体与字号设置
+- 配置保存在 `~/.config/rustpad/config.toml`
+
+#### 跨平台
+- macOS：原生菜单栏、`.app` 打包
+- Windows：高 DPI、文件关联
+- Linux：通过 egui/eframe 完整支持
+
+### 构建
+
+#### 环境要求
+
+- Rust 1.75+（[rustup](https://rustup.rs/)）
+- macOS：Xcode Command Line Tools
+- Windows：Visual Studio Build Tools
+
+#### 快速构建
+
+```bash
+git clone https://github.com/joyoki/rustpad.git
+cd rustpad
+cargo build --release
+cargo run --release
 ```
 
-## Custom Themes
+#### macOS 打包
 
-Create JSON files in `~/.config/rustpad/themes/`:
+```bash
+chmod +x scripts/build.sh
+./scripts/build.sh
+```
+
+#### Windows 打包
+
+```powershell
+.\scripts\build.ps1
+```
+
+### 键盘快捷键（默认）
+
+| 操作 | 快捷键 |
+|------|--------|
+| 新建标签 | Ctrl+N |
+| 打开文件 | Ctrl+O |
+| 保存 | Ctrl+S |
+| 另存为 | Ctrl+Shift+S |
+| 关闭标签 | Ctrl+W |
+| 撤销 | Ctrl+Z |
+| 重做 | Ctrl+Y |
+| 剪切 | Ctrl+X |
+| 复制 | Ctrl+C |
+| 粘贴 | Ctrl+V |
+| 全选 | Ctrl+A |
+| 查找 | Ctrl+F |
+| 替换 | Ctrl+H |
+| 转到行 | Ctrl+G |
+| 在文件中查找 | Ctrl+Shift+F |
+| 对比文件 | Ctrl+D |
+| 切换侧边栏 | Ctrl+B |
+| 命令面板 | Ctrl+Shift+P |
+| 下一标签 | Ctrl+Tab |
+
+### 自定义主题
+
+在 `~/.config/rustpad/themes/` 创建 JSON 主题文件，颜色格式为 `[R, G, B, A]`（0–255）。示例：
 
 ```json
 {
   "name": "My Theme",
   "background": [30, 30, 30, 255],
   "foreground": [212, 212, 212, 255],
-  "line_number_bg": [30, 30, 30, 255],
-  "line_number_fg": [128, 128, 128, 255],
-  "current_line_bg": [40, 40, 40, 255],
   "selection_bg": [38, 79, 120, 200],
-  "cursor_color": [212, 212, 212, 255],
-  "gutter_bg": [30, 30, 30, 255],
-  "sidebar_bg": [37, 37, 38, 255],
-  "sidebar_fg": [204, 204, 204, 255],
-  "status_bar_bg": [0, 122, 204, 255],
-  "status_bar_fg": [255, 255, 255, 255],
-  "tab_bar_bg": [45, 45, 48, 255],
-  "tab_active_bg": [30, 30, 30, 255],
-  "tab_active_fg": [255, 255, 255, 255],
-  "tab_inactive_bg": [45, 45, 48, 255],
-  "tab_inactive_fg": [160, 160, 160, 255],
-  "diff_insert_bg": [228, 255, 228, 255],
-  "diff_delete_bg": [255, 228, 228, 255],
-  "diff_replace_bg": [255, 251, 228, 255],
-  "search_highlight_bg": [255, 255, 0, 128],
-  "minimap_bg": [30, 30, 30, 255],
-  "scroll_bar_bg": [30, 30, 30, 255],
-  "scroll_bar_fg": [121, 121, 121, 255]
+  "cursor_color": [212, 212, 212, 255]
 }
 ```
 
-Each color is `[R, G, B, A]` (0-255, RGBA).
+### 配置
 
-## Configuration
-
-All settings are stored in `~/.config/rustpad/config.toml`:
+主配置文件：`~/.config/rustpad/config.toml`
 
 ```toml
 [editor]
@@ -195,83 +248,52 @@ show_line_numbers = true
 word_wrap = false
 auto_indent = true
 highlight_current_line = true
-font_family = "JetBrains Mono"
 
 [ui]
 theme = "Dark"
 show_minimap = true
-sidebar_width = 220.0
 keybinding_scheme = "NotepadPP"
-
-[window]
-width = 1280.0
-height = 720.0
-maximized = false
-
-[auto_save]
-enabled = true
-interval_seconds = 300
 ```
 
-## Debugging
-
-Set `RUSTPAD_LOG` environment variable for verbose logging:
+### 调试
 
 ```bash
 RUSTPAD_LOG=debug cargo run
 ```
 
-Crash logs are written to `~/.config/rustpad/crash.log`.
+崩溃日志：`~/.config/rustpad/crash.log`
 
-## Architecture
+### 参与贡献
+
+1. Fork 本仓库
+2. 创建功能分支（`git checkout -b feature/my-feature`）
+3. 确保 `cargo clippy -- -D warnings` 与 `cargo test` 通过
+4. 提交 Pull Request
+
+### 许可证
+
+MIT License，详见 [LICENSE](LICENSE)。
+
+---
+
+## Architecture / 架构
 
 ```
 src/
-├── main.rs              # Entry point, window setup
-├── app.rs               # Top-level application state
-├── config/              # Configuration management + themes
-│   ├── mod.rs           # AppConfig (TOML persistence)
-│   └── theme.rs         # Theme system (4 built-in + custom)
-├── diff/                # Diff engine
-│   ├── engine.rs        # Myers/Patience/LCS algorithms
-│   ├── folder_diff.rs   # Directory comparison
-│   └── three_way.rs     # Three-way merge
-├── editor/              # Editor core (pure data logic)
-│   ├── buffer.rs        # TextBuffer with SimpleRope + undo
-│   ├── cursor.rs        # Cursor and Selection
-│   ├── tab.rs           # Tab management
-│   ├── file_io.rs       # File I/O with encoding detection
-│   ├── fold.rs          # Code folding
-│   ├── indent.rs        # Auto-indentation
-│   ├── autocomplete.rs  # Autocomplete engine
-│   └── macro_recorder.rs # Macro recording
-├── highlight/           # Syntax highlighting (syntect)
-├── platform/            # Platform-specific code
-│   ├── mod.rs           # Panic hook, logging init
-│   ├── macos.rs         # macOS specifics
-│   └── windows.rs       # Windows specifics
-├── plugin/              # Plugin API (skeleton)
-├── search/              # Search engine
-├── session/             # Session persistence + auto-save
-└── ui/                  # UI components (egui)
-    ├── keybindings.rs   # Configurable keybinding system
-    ├── menu.rs          # Menu bar
-    ├── toolbar.rs       # Toolbar
-    ├── editor_widget.rs # Core editor widget
-    ├── diff_view.rs     # Diff view
-    ├── file_tree.rs     # File explorer
-    ├── command_palette.rs # Command palette
-    └── ...
+├── main.rs              # Entry point / 入口
+├── app.rs               # Application state / 应用状态
+├── config/              # Config & themes / 配置与主题
+├── diff/                # Diff engine / 对比引擎
+├── editor/              # Editor core / 编辑器核心
+├── highlight/           # Syntax highlighting / 语法高亮
+├── platform/            # Platform-specific / 平台相关
+├── search/              # Search / 搜索
+├── session/             # Session & auto-save / 会话与自动保存
+└── ui/                  # egui UI components / 界面组件
 ```
 
-## Contributing
+## Releases / 发布说明
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/my-feature`)
-3. Ensure `cargo clippy -- -D warnings` passes
-4. Ensure `cargo test` passes
-5. Submit a pull request
+See [CHANGELOG.md](CHANGELOG.md) and [GitHub Releases](https://github.com/joyoki/rustpad/releases).
 
-## License
-
-MIT License. See [LICENSE](LICENSE) for details.
+变更记录见 [CHANGELOG.md](CHANGELOG.md) 与 [GitHub Releases](https://github.com/joyoki/rustpad/releases)。

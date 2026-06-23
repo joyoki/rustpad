@@ -5,7 +5,7 @@ edition = "2021"
 description = "A modern code editor built with Rust, inspired by Notepad++"
 license = "MIT"
 authors = ["RustPad Contributors"]
-repository = "https://github.com/rustpad/rustpad"
+repository = "https://github.com/joyoki/rustpad"
 
 [dependencies]
 # UI framework

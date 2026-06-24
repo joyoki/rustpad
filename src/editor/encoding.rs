@@ -60,6 +60,35 @@ impl EncodingProfile {
         )
     }
 
+    /// Stable id suffix for native menu items (`enc.open.{id}` / `enc.convert.{id}`).
+    pub fn menu_id(self) -> &'static str {
+        match self {
+            Self::AnsiGbk => "AnsiGbk",
+            Self::Utf8 => "Utf8",
+            Self::Utf8Bom => "Utf8Bom",
+            Self::Utf16Be => "Utf16Be",
+            Self::Utf16Le => "Utf16Le",
+            Self::Latin1 => "Latin1",
+        }
+    }
+
+    pub fn from_menu_id(id: &str) -> Option<Self> {
+        match id {
+            "AnsiGbk" => Some(Self::AnsiGbk),
+            "Utf8" => Some(Self::Utf8),
+            "Utf8Bom" => Some(Self::Utf8Bom),
+            "Utf16Be" => Some(Self::Utf16Be),
+            "Utf16Le" => Some(Self::Utf16Le),
+            "Latin1" => Some(Self::Latin1),
+            _ => None,
+        }
+    }
+
+    /// All profiles shown in encoding menus.
+    pub fn menu_profiles() -> impl Iterator<Item = Self> {
+        Self::MAIN.iter().copied().chain(Self::MORE.iter().copied())
+    }
+
     /// Decode raw file bytes using the selected profile (for "open with encoding").
     pub fn decode_bytes(self, bytes: &[u8]) -> String {
         match self {
@@ -116,7 +145,7 @@ impl EncodingProfile {
     }
 }
 
-/// Auto-detect encoding from raw bytes.
+/// Auto-detect encoding from raw bytes (BOM only; otherwise default UTF-8).
 pub fn detect_encoding_profile(bytes: &[u8]) -> EncodingProfile {
     if bytes.len() >= 3 && bytes[..3] == [0xEF, 0xBB, 0xBF] {
         return EncodingProfile::Utf8Bom;
@@ -127,14 +156,7 @@ pub fn detect_encoding_profile(bytes: &[u8]) -> EncodingProfile {
     if bytes.len() >= 2 && bytes[..2] == [0xFE, 0xFF] {
         return EncodingProfile::Utf16Be;
     }
-    if std::str::from_utf8(bytes).is_ok() {
-        return EncodingProfile::Utf8;
-    }
-    let (_, _, gbk_errors) = encoding_rs::GBK.decode(bytes);
-    if !gbk_errors {
-        return EncodingProfile::AnsiGbk;
-    }
-    EncodingProfile::Latin1
+    EncodingProfile::Utf8
 }
 
 fn utf8_bom_skip(bytes: &[u8]) -> usize {
@@ -208,6 +230,11 @@ mod tests {
     #[test]
     fn test_detect_utf8_plain() {
         assert_eq!(detect_encoding_profile(b"hello"), EncodingProfile::Utf8);
+    }
+
+    #[test]
+    fn test_detect_defaults_to_utf8_without_bom() {
+        assert_eq!(detect_encoding_profile(&[0x80, 0x81, 0x82]), EncodingProfile::Utf8);
     }
 
     #[test]

@@ -5,6 +5,18 @@ use eframe::egui;
 use crate::app::RustpadApp;
 use crate::editor::EncodingProfile;
 
+/// Prefix for the active "open with encoding" entry (visible in egui menus).
+const OPEN_ENCODING_CHECK: &str = "✅ ";
+
+/// Label for an "open with encoding" row; marks the active profile.
+pub fn open_with_row_label(base_label: String, selected: bool) -> String {
+    if selected {
+        format!("{OPEN_ENCODING_CHECK}{base_label}")
+    } else {
+        base_label
+    }
+}
+
 /// Render the encoding dropdown; returns actions to apply after the menu closes.
 pub fn show_menu(ui: &mut egui::Ui, app: &RustpadApp) -> EncodingMenuAction {
     let t = app.tr();
@@ -16,8 +28,8 @@ pub fn show_menu(ui: &mut egui::Ui, app: &RustpadApp) -> EncodingMenuAction {
 
     ui.label(egui::RichText::new(t.enc_open_section).strong());
     for profile in EncodingProfile::MAIN {
-        let label = t.enc_open_with(profile);
         let selected = current == profile;
+        let label = open_with_row_label(t.enc_open_with(profile), selected);
         if ui
             .add_enabled(has_file, egui::SelectableLabel::new(selected, label))
             .clicked()
@@ -28,8 +40,8 @@ pub fn show_menu(ui: &mut egui::Ui, app: &RustpadApp) -> EncodingMenuAction {
     }
     ui.menu_button(t.enc_more, |ui| {
         for profile in EncodingProfile::MORE {
-            let label = t.enc_open_with(profile);
             let selected = current == profile;
+            let label = open_with_row_label(t.enc_open_with(profile), selected);
             if ui
                 .add_enabled(has_file, egui::SelectableLabel::new(selected, label))
                 .clicked()
@@ -77,12 +89,7 @@ pub fn show_menu(ui: &mut egui::Ui, app: &RustpadApp) -> EncodingMenuAction {
 
 /// Apply a menu action after the popup closes.
 pub fn apply_action(app: &mut RustpadApp, action: EncodingMenuAction) {
-    match action {
-        EncodingMenuAction::OpenWith(profile) => app.open_with_encoding(profile),
-        EncodingMenuAction::ConvertTo(profile) => app.convert_to_encoding(profile),
-        EncodingMenuAction::BatchConvert => app.show_batch_encoding = true,
-        EncodingMenuAction::None => {}
-    }
+    crate::ui::menu_actions::apply_encoding_action(app, action);
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

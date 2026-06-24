@@ -71,7 +71,20 @@ fn main() -> eframe::Result {
         options,
         Box::new(|cc| {
             log::info!("eframe initialized, creating app...");
-            Ok(Box::new(app::RustpadApp::new(cc)))
+            let mut app = app::RustpadApp::new(cc);
+            #[cfg(target_os = "macos")]
+            {
+                let t = app.tr();
+                let current_encoding = app.tab_manager.active().encoding;
+                let has_open_file = app.tab_manager.active().file_path.is_some();
+                let handles =
+                    platform::macos_menu::install(t, current_encoding, has_open_file);
+                app.macos_menu = Some(handles.menu);
+                app.macos_menu_rx = Some(handles.rx);
+                app.macos_encoding_open_checks = handles.encoding_open_checks;
+                cc.egui_ctx.request_repaint();
+            }
+            Ok(Box::new(app) as Box<dyn eframe::App>)
         }),
     ) {
         eprintln!("启动失败: {e}");

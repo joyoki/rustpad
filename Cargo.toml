@@ -49,6 +49,7 @@ rfd = "0.15"
 # macOS: disable winit's default menu so Cmd+Q reaches the app (lets us prompt
 # to save before quitting). Version must match eframe 0.29's winit (0.30).
 [target.'cfg(target_os = "macos")'.dependencies]
+muda = { version = "0.19.3", default-features = false }
 winit = "0.30"
 
 [dev-dependencies]

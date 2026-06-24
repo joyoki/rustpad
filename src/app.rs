@@ -234,6 +234,14 @@ pub struct RustpadApp {
     pub toolbar_font_size_text: String,
     /// True while the toolbar font-size field is focused (blocks external text sync).
     pub toolbar_font_size_editing: bool,
+
+    /// Native macOS menu bar (system menu after the app name).
+    #[cfg(target_os = "macos")]
+    pub macos_menu: Option<muda::Menu>,
+    #[cfg(target_os = "macos")]
+    pub macos_menu_rx: Option<std::sync::mpsc::Receiver<muda::MenuEvent>>,
+    #[cfg(target_os = "macos")]
+    pub macos_encoding_open_checks: Vec<(EncodingProfile, muda::CheckMenuItem)>,
 }
 
 impl RustpadApp {
@@ -381,6 +389,12 @@ impl RustpadApp {
             clipboard_marks: Vec::new(),
             toolbar_font_size_text,
             toolbar_font_size_editing: false,
+            #[cfg(target_os = "macos")]
+            macos_menu: None,
+            #[cfg(target_os = "macos")]
+            macos_menu_rx: None,
+            #[cfg(target_os = "macos")]
+            macos_encoding_open_checks: Vec::new(),
         };
 
         app.apply_theme(&cc.egui_ctx);
@@ -2268,6 +2282,11 @@ impl eframe::App for RustpadApp {
         let blocking_dialog = self.show_quit_unsaved_dialog || self.show_unsaved_dialog;
 
         if !blocking_dialog {
+            #[cfg(target_os = "macos")]
+            {
+                crate::platform::macos_menu::drain_events(self, ctx);
+                crate::platform::macos_menu::sync_encoding_open_checks(self);
+            }
             self.collect_shortcuts(ctx);
             self.process_pending_actions();
         }

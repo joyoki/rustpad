@@ -1,109 +1,118 @@
 use eframe::egui;
 
 use crate::app::RustpadApp;
+use crate::highlight::MENU_LANGUAGES;
 use crate::ui::encoding_menu::{self, EncodingMenuAction};
+use crate::ui::menu_actions::{self, MENU_FONT_SIZES};
 
-/// Render the top menu bar.
+/// Render the top menu bar (in-window on Windows/Linux; macOS uses the system menu bar).
+#[cfg_attr(target_os = "macos", allow(unused_variables))]
 pub fn show(app: &mut RustpadApp, ctx: &egui::Context) {
+    #[cfg(not(target_os = "macos"))]
+    show_in_window(app, ctx);
+}
+
+#[cfg(not(target_os = "macos"))]
+fn show_in_window(app: &mut RustpadApp, ctx: &egui::Context) {
     let t = app.tr();
     egui::TopBottomPanel::top("menu_bar").show(ctx, |ui| {
         egui::menu::bar(ui, |ui| {
             ui.menu_button(t.menu_file, |ui| {
                 if ui.button(t.file_new).clicked() {
-                    app.tab_manager.new_tab();
+                    menu_actions::dispatch(app, "file.new", ctx);
                     ui.close_menu();
                 }
                 if ui.button(t.file_open).clicked() {
-                    app.pending_open_file = true;
+                    menu_actions::dispatch(app, "file.open", ctx);
                     ui.close_menu();
                 }
                 ui.separator();
                 if ui.button(t.file_save).clicked() {
-                    app.save_current_tab();
+                    menu_actions::dispatch(app, "file.save", ctx);
                     ui.close_menu();
                 }
                 if ui.button(t.file_save_as).clicked() {
-                    app.save_as_dialog();
+                    menu_actions::dispatch(app, "file.save_as", ctx);
                     ui.close_menu();
                 }
                 if ui.button(t.file_save_all).clicked() {
-                    app.save_all_tabs();
+                    menu_actions::dispatch(app, "file.save_all", ctx);
                     ui.close_menu();
                 }
                 ui.separator();
                 if ui.button(t.file_close_tab).clicked() {
-                    app.close_current_tab();
+                    menu_actions::dispatch(app, "file.close_tab", ctx);
                     ui.close_menu();
                 }
                 ui.separator();
                 if ui.button(t.file_compare).clicked() {
-                    app.pending_compare_files = true;
+                    menu_actions::dispatch(app, "file.compare", ctx);
                     ui.close_menu();
                 }
                 if ui.button(t.file_compare_current).clicked() {
-                    app.pending_compare_current = true;
+                    menu_actions::dispatch(app, "file.compare_current", ctx);
                     ui.close_menu();
                 }
                 ui.separator();
                 if ui.button(t.file_exit).clicked() {
-                    app.request_exit(ctx);
+                    menu_actions::dispatch(app, "file.exit", ctx);
                     ui.close_menu();
                 }
             });
 
             ui.menu_button(t.menu_edit, |ui| {
                 if ui.button(t.edit_undo).clicked() {
-                    app.tab_manager.active_mut().buffer.undo();
+                    menu_actions::dispatch(app, "edit.undo", ctx);
                     ui.close_menu();
                 }
                 if ui.button(t.edit_redo).clicked() {
-                    app.tab_manager.active_mut().buffer.redo();
+                    menu_actions::dispatch(app, "edit.redo", ctx);
                     ui.close_menu();
                 }
                 ui.separator();
                 if ui.button(t.edit_cut).clicked() {
-                    app.cut();
+                    menu_actions::dispatch(app, "edit.cut", ctx);
                     ui.close_menu();
                 }
                 if ui.button(t.edit_copy).clicked() {
-                    app.copy();
+                    menu_actions::dispatch(app, "edit.copy", ctx);
                     ui.close_menu();
                 }
                 if ui.button(t.edit_paste).clicked() {
-                    app.paste();
+                    menu_actions::dispatch(app, "edit.paste", ctx);
                     ui.close_menu();
                 }
                 if ui.button(t.edit_select_all).clicked() {
-                    app.select_all();
+                    menu_actions::dispatch(app, "edit.select_all", ctx);
                     ui.close_menu();
                 }
                 ui.separator();
                 if ui.button(t.edit_find).clicked() {
-                    app.open_find(false);
+                    menu_actions::dispatch(app, "edit.find", ctx);
                     ui.close_menu();
                 }
                 if ui.button(t.edit_replace).clicked() {
-                    app.open_find(true);
+                    menu_actions::dispatch(app, "edit.replace", ctx);
                     ui.close_menu();
                 }
                 if ui.button(t.edit_goto_line).clicked() {
-                    app.show_goto_line = true;
+                    menu_actions::dispatch(app, "edit.goto_line", ctx);
                     ui.close_menu();
                 }
                 ui.separator();
                 if ui.button(t.edit_copy_column).clicked() {
-                    app.copy_column();
+                    menu_actions::dispatch(app, "edit.copy_column", ctx);
                     ui.close_menu();
                 }
             });
 
             ui.menu_button(t.menu_view, |ui| {
                 if ui.button(t.view_toggle_sidebar).clicked() {
-                    app.show_sidebar = !app.show_sidebar;
+                    menu_actions::dispatch(app, "view.sidebar", ctx);
                     ui.close_menu();
                 }
                 if ui.button(t.view_toggle_minimap).clicked() {
-                    app.config.ui.show_minimap = !app.config.ui.show_minimap;
+                    menu_actions::dispatch(app, "view.minimap", ctx);
                     ui.close_menu();
                 }
                 ui.separator();
@@ -123,38 +132,38 @@ pub fn show(app: &mut RustpadApp, ctx: &egui::Context) {
                     let is_auto = app.tab_manager.active().syntax_override.is_none();
 
                     if ui.selectable_label(is_auto, t.view_auto_detect).clicked() {
-                        app.clear_active_language();
+                        menu_actions::dispatch(app, "view.lang.auto", ctx);
                         ui.close_menu();
                     }
                     ui.separator();
-                    for &lang in crate::highlight::MENU_LANGUAGES {
+                    for (index, &lang) in MENU_LANGUAGES.iter().enumerate() {
                         if ui.selectable_label(current == lang, lang).clicked() {
-                            app.set_active_language(lang);
+                            menu_actions::dispatch(app, &format!("view.lang.{index}"), ctx);
                             ui.close_menu();
                         }
                     }
                 });
                 ui.separator();
                 ui.menu_button(t.view_font_size, |ui| {
-                    for size in [10, 12, 14, 16, 18, 20, 24] {
+                    for size in MENU_FONT_SIZES {
                         if ui
                             .selectable_label(
                                 app.config.editor.font_size == size as f32,
-                                format!("{}px", size),
+                                format!("{size}px"),
                             )
                             .clicked()
                         {
-                            app.config.editor.font_size = size as f32;
+                            menu_actions::dispatch(app, &format!("view.font.{size}"), ctx);
                         }
                     }
                 });
                 ui.separator();
                 if ui.button(t.view_word_wrap).clicked() {
-                    app.config.editor.word_wrap = !app.config.editor.word_wrap;
+                    menu_actions::dispatch(app, "view.word_wrap", ctx);
                     ui.close_menu();
                 }
                 if ui.button(t.view_line_numbers).clicked() {
-                    app.config.editor.show_line_numbers = !app.config.editor.show_line_numbers;
+                    menu_actions::dispatch(app, "view.line_numbers", ctx);
                     ui.close_menu();
                 }
             });
@@ -163,33 +172,33 @@ pub fn show(app: &mut RustpadApp, ctx: &egui::Context) {
             ui.menu_button(t.menu_encoding, |ui| {
                 enc_action = encoding_menu::show_menu(ui, app);
             });
-            encoding_menu::apply_action(app, enc_action);
+            menu_actions::apply_encoding_action(app, enc_action);
 
             ui.menu_button(t.menu_tools, |ui| {
                 if ui.button(t.tools_compare).clicked() {
-                    app.pending_compare_files = true;
+                    menu_actions::dispatch(app, "tools.compare", ctx);
                     ui.close_menu();
                 }
                 if ui.button(t.tools_macro).clicked() {
-                    app.toggle_macro_recording();
+                    menu_actions::dispatch(app, "tools.macro", ctx);
                     ui.close_menu();
                 }
             });
 
             ui.menu_button(t.menu_settings, |ui| {
                 if ui.button(t.settings_preferences).clicked() {
-                    app.show_preferences = true;
+                    menu_actions::dispatch(app, "settings.preferences", ctx);
                     ui.close_menu();
                 }
                 if ui.button(t.settings_keybindings).clicked() {
-                    crate::ui::keybindings_dialog::open_editor(app);
+                    menu_actions::dispatch(app, "settings.keybindings", ctx);
                     ui.close_menu();
                 }
             });
 
             ui.menu_button(t.menu_help, |ui| {
                 if ui.button(t.help_about).clicked() {
-                    app.show_about = true;
+                    menu_actions::dispatch(app, "help.about", ctx);
                     ui.close_menu();
                 }
             });

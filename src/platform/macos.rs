@@ -13,8 +13,8 @@ pub fn app_icon_path() -> Option<PathBuf> {
 
 /// Configure macOS-specific eframe options.
 pub fn configure_native_options(_options: &mut eframe::NativeOptions) {
-    // macOS: use full-size content view to extend into title bar
-    // eframe handles this via its default macOS integration
+    // Native menu bar is installed via muda in main.rs after NSApp is ready.
+    // macOS automatically places menu items in the notch safe area on Apple Silicon MacBooks.
     log::info!("Configuring macOS-specific options");
 }
 

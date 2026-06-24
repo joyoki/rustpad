@@ -28,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Column selection and copy**: Alt+drag rectangular selection, column copy via menu/shortcut, and context menu entry.
 - **Content extent line**: orange vertical guide on the line-number gutter showing how many lines have content (Notepad++ style).
 - **About dialog** links to the GitHub repository and latest releases.
+- **RustPad logo & branding**: window/taskbar icon, startup splash, and logo in the About dialog; bundled `icon.icns` / `icon.ico` for macOS and Windows packages.
 
 #### Changed
 
@@ -94,6 +95,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **列选择与列复制**：Alt+拖动矩形列选、菜单/快捷键列复制、右键菜单入口。
 - **内容长度竖线**：行号区右侧橙色竖线，标示已写入内容的行数范围（Notepad++ 风格）。
 - **关于对话框**增加 GitHub 仓库与最新版本下载链接。
+- **RustPad 品牌标识**：窗口/任务栏图标、启动画面、关于对话框 logo；macOS/Windows 安装包内置 `icon.icns` / `icon.ico`。
 
 #### 变更
 

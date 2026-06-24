@@ -21,7 +21,12 @@ pub fn show(app: &mut RustpadApp, ctx: &egui::Context) {
         return;
     }
 
-    egui::CentralPanel::default().show(ctx, |ui| {
+    let mut central_frame = egui::Frame::central_panel(&ctx.style());
+    central_frame.inner_margin.top = 0.0;
+
+    egui::CentralPanel::default()
+        .frame(central_frame)
+        .show(ctx, |ui| {
         let font_size = app.config.editor.font_size;
         let line_height = font_size * 1.4;
         let show_line_numbers = app.config.editor.show_line_numbers;
@@ -48,8 +53,9 @@ pub fn show(app: &mut RustpadApp, ctx: &egui::Context) {
             0.0
         };
         let panel_rect = ui.available_rect_before_wrap();
+        let layout_top = ui.max_rect().top();
         let content_bottom = panel_rect.bottom() - scroll_bar::BAR_BOTTOM_SAFE_INSET;
-        let row_height = (content_bottom - panel_rect.top()).max(0.0);
+        let row_height = (content_bottom - layout_top).max(0.0);
         let line_num_width = if show_line_numbers {
             gutter_width + gutter_editor_gap
         } else {
@@ -69,15 +75,15 @@ pub fn show(app: &mut RustpadApp, ctx: &egui::Context) {
         );
 
         let fold_rect = egui::Rect::from_min_size(
-            egui::pos2(panel_rect.left(), panel_rect.top()),
+            egui::pos2(panel_rect.left(), layout_top),
             egui::vec2(FOLD_GUTTER_WIDTH, row_height),
         );
         let line_rect = egui::Rect::from_min_size(
-            egui::pos2(fold_rect.right(), panel_rect.top()),
+            egui::pos2(fold_rect.right(), layout_top),
             egui::vec2(line_num_width, row_height),
         );
         let strip_rect = egui::Rect::from_min_max(
-            egui::pos2(panel_rect.right() - strip_width, panel_rect.top()),
+            egui::pos2(panel_rect.right() - strip_width, layout_top),
             egui::pos2(panel_rect.right(), content_bottom),
         );
         let scroll_rect = egui::Rect::from_min_max(
@@ -93,7 +99,7 @@ pub fn show(app: &mut RustpadApp, ctx: &egui::Context) {
             egui::Rect::NOTHING
         };
         let editor_rect = egui::Rect::from_min_max(
-            egui::pos2(line_rect.right(), panel_rect.top()),
+            egui::pos2(line_rect.right(), layout_top),
             egui::pos2(strip_rect.left(), content_bottom),
         );
         let available_width = editor_rect.width().max(0.0);

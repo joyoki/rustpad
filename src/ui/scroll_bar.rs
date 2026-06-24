@@ -12,8 +12,6 @@ const SILHOUETTE_LINE_HEIGHT: f32 = 2.0;
 /// Minimum height of the viewport band in the silhouette.
 const SILHOUETTE_MIN_VIEW_HEIGHT: f32 = 24.0;
 const ARROW_BTN_HEIGHT: f32 = 14.0;
-/// Gap between the scroll track and the arrow buttons (boundary buffer).
-const TRACK_END_PADDING: f32 = 3.0;
 /// Extra inset so the bottom arrow stays inside the paintable area (macOS rounded corners).
 #[cfg(target_os = "macos")]
 pub const BAR_BOTTOM_SAFE_INSET: f32 = 6.0;
@@ -23,6 +21,8 @@ pub const BAR_BOTTOM_SAFE_INSET: f32 = 0.0;
 const MIN_THUMB_HEIGHT: f32 = 48.0;
 /// Thumb is at least this fraction of the track height.
 const MIN_THUMB_TRACK_RATIO: f32 = 0.15;
+/// Border stroke shared by arrow blocks and the thumb so outer widths match.
+const CONTROL_STROKE_WIDTH: f32 = 1.0;
 
 struct ScrollTrackLayout {
     track_rect: egui::Rect,
@@ -43,7 +43,21 @@ pub fn max_scroll_offset(
 }
 
 fn effective_bar_rect(bar_rect: egui::Rect, clip: egui::Rect) -> egui::Rect {
-    bar_rect.intersect(clip)
+    // Keep the strip flush to the top; only clip sides and bottom (macOS corner inset).
+    egui::Rect::from_min_max(
+        egui::pos2(bar_rect.left().max(clip.left()), bar_rect.top()),
+        egui::pos2(
+            bar_rect.right().min(clip.right()),
+            bar_rect.bottom().min(clip.bottom()),
+        ),
+    )
+}
+
+fn control_column_rect(bar_rect: egui::Rect, top: f32, height: f32) -> egui::Rect {
+    egui::Rect::from_min_size(
+        egui::pos2(bar_rect.left(), top),
+        egui::vec2(QUICK_SCROLL_WIDTH.min(bar_rect.width()), height),
+    )
 }
 
 fn compute_track_layout(
@@ -52,24 +66,15 @@ fn compute_track_layout(
     content_height: f32,
     viewport_height: f32,
 ) -> ScrollTrackLayout {
-    let up_btn_rect = egui::Rect::from_min_size(
-        bar_rect.left_top(),
-        egui::vec2(bar_rect.width(), ARROW_BTN_HEIGHT),
-    );
+    let up_btn_rect = control_column_rect(bar_rect, bar_rect.top(), ARROW_BTN_HEIGHT);
     // Keep the bottom arrow fully inside the paintable clip (macOS rounded window corners).
     let down_bottom = (bar_rect.bottom() - BAR_BOTTOM_SAFE_INSET).min(clip.bottom() - 1.0);
     let down_top = (down_bottom - ARROW_BTN_HEIGHT).max(up_btn_rect.bottom());
-    let down_btn_rect = egui::Rect::from_min_max(
-        egui::pos2(bar_rect.left(), down_top),
-        egui::pos2(bar_rect.right(), down_bottom),
-    );
-    let track_top = up_btn_rect.bottom() + TRACK_END_PADDING;
-    let track_bottom = down_btn_rect.top() - TRACK_END_PADDING;
+    let down_btn_rect = control_column_rect(bar_rect, down_top, down_bottom - down_top);
+    let track_top = up_btn_rect.bottom();
+    let track_bottom = down_btn_rect.top();
     let track_height = (track_bottom - track_top).max(0.0);
-    let track_rect = egui::Rect::from_min_max(
-        egui::pos2(bar_rect.left(), track_top),
-        egui::pos2(bar_rect.right(), track_bottom),
-    );
+    let track_rect = control_column_rect(bar_rect, track_top, track_height);
 
     let thumb_height = if content_height > viewport_height && track_height > 0.0 {
         let proportional = track_height * (viewport_height / content_height);
@@ -197,6 +202,16 @@ fn scroll_from_thumb_top(
     rel * max_scroll
 }
 
+fn paint_control_block(
+    painter: &egui::Painter,
+    rect: egui::Rect,
+    fill: Color32,
+    border: Color32,
+) {
+    painter.rect_filled(rect, 0.0, fill);
+    painter.rect_stroke(rect, 0.0, Stroke::new(CONTROL_STROKE_WIDTH, border));
+}
+
 fn paint_arrow(painter: &egui::Painter, rect: egui::Rect, up: bool, color: Color32) {
     let c = rect.center();
     let half_h = rect.height() * 0.22;
@@ -225,8 +240,7 @@ fn paint_arrow_button(
     border: Color32,
     arrow_color: Color32,
 ) {
-    painter.rect_filled(rect, 0.0, btn_bg);
-    painter.rect_stroke(rect, 0.0, Stroke::new(1.0, border));
+    paint_control_block(painter, rect, btn_bg, border);
     paint_arrow(painter, rect, up, arrow_color);
 }
 
@@ -279,10 +293,7 @@ pub fn show_quick_scroll_bar(
     let scroll_offset = app.tab_manager.active().scroll_offset;
     let thumb_top =
         thumb_top_from_scroll(scroll_offset, track_top, layout.thumb_travel, max_scroll);
-    let thumb_rect = egui::Rect::from_min_size(
-        egui::pos2(track.left(), thumb_top),
-        egui::vec2(track.width(), layout.thumb_height),
-    );
+    let thumb_rect = control_column_rect(bar_rect, thumb_top, layout.thumb_height);
 
     let tab_id = app.tab_manager.active().id;
     let grab_id = ui.id().with(("quick_scroll_grab", tab_id));
@@ -305,32 +316,13 @@ pub fn show_quick_scroll_bar(
 
     painter.rect_filled(bar_rect, 0.0, buffer_bg);
     painter.rect_filled(track, 0.0, track_bg);
-    // Boundary buffer zones between arrow buttons and track.
-    if TRACK_END_PADDING > 0.0 {
-        painter.rect_filled(
-            egui::Rect::from_min_max(
-                egui::pos2(bar_rect.left(), layout.up_btn_rect.bottom()),
-                egui::pos2(bar_rect.right(), track_top),
-            ),
-            0.0,
-            buffer_bg,
-        );
-        painter.rect_filled(
-            egui::Rect::from_min_max(
-                egui::pos2(bar_rect.left(), track_bottom),
-                egui::pos2(bar_rect.right(), layout.down_btn_rect.top()),
-            ),
-            0.0,
-            buffer_bg,
-        );
-    }
 
     let thumb_color = if thumb_response.hovered() || thumb_response.dragged() {
         Color32::from_gray(120)
     } else {
         Color32::from_gray(150)
     };
-    painter.rect_filled(thumb_rect, 1.0, thumb_color);
+    paint_control_block(painter, thumb_rect, thumb_color, border_color);
     // Draw arrow buttons on top so they are never covered by the thumb.
     paint_arrow_button(
         painter,
@@ -645,11 +637,14 @@ mod tests {
     }
 
     #[test]
-    fn track_layout_reserves_arrow_buttons_and_padding() {
+    fn track_layout_reserves_arrow_buttons_flush_with_track() {
         let bar = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(16.0, 400.0));
         let layout = compute_track_layout(bar, bar, 8000.0, 400.0);
-        assert!(layout.up_btn_rect.bottom() + TRACK_END_PADDING <= layout.track_rect.top() + 0.01);
-        assert!(layout.track_rect.bottom() + TRACK_END_PADDING <= layout.down_btn_rect.top() + 0.01);
+        assert!((layout.track_rect.top() - layout.up_btn_rect.bottom()).abs() < 0.01);
+        assert!((layout.down_btn_rect.top() - layout.track_rect.bottom()).abs() < 0.01);
+        assert!((layout.up_btn_rect.width() - QUICK_SCROLL_WIDTH).abs() < 0.01);
+        assert!((layout.up_btn_rect.width() - layout.track_rect.width()).abs() < 0.01);
+        assert_eq!(layout.up_btn_rect.left(), layout.track_rect.left());
         assert!(layout.down_btn_rect.bottom() <= bar.bottom() + 0.01);
         assert!(layout.thumb_height >= MIN_THUMB_HEIGHT);
     }

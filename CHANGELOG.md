@@ -15,24 +15,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### [Unreleased]
 
+### [0.1.3](https://github.com/joyoki/rustpad/compare/v0.1.2...v0.1.3) - 2026-06-24
+
 #### Added
 
 - **macOS native menu bar** (Apple Silicon notch / menu bar integration): full menu parity with Windows/Linux via `muda`, including File, Edit, View, Encoding, Tools, Settings, and Help.
 - **Quick scroll bar** (Notepad++ style): narrow strip with up/down arrows, draggable thumb, track click, wheel scroll, and context menu (scroll to cursor, top/bottom, page up/down).
 - **Inline document silhouette** beside the scroll bar: gray line bars map the full file; a viewport band follows scroll position and supports click/drag to jump.
 - **Toolbar font size field**: type a value (8–72 px) directly instead of only using +/- buttons.
-
-#### Changed
-
-- **Encoding detection** defaults to UTF-8 when no BOM is present (no longer guesses GBK/Latin-1).
-- **Encoding → Open with encoding** shows a checkmark (✅) on the active profile for at-a-glance feedback.
-- Toolbar buttons are **icon-only** with hover tooltips (labels removed from the bar).
-- Minimap rendering moved from a separate side panel to the scroll strip (no gap between scrollbar and silhouette).
-
-#### Fixed
-
-- **Scroll wheel jitter**: auto-scroll-to-cursor runs only when the cursor moves, not while wheel/scrollbar scrolling.
-
 - **Encoding menu** (menu bar): open with encoding, convert to encoding, and batch convert for ANSI/GBK, UTF-8, UTF-8 BOM, UTF-16, and more.
 - **Settings menu** with **Preferences** and **Keyboard Shortcuts** editor (Notepad++ / VS Code presets, rebind keys, conflict detection).
 - **Column selection and copy**: Alt+drag rectangular selection, column copy via menu/shortcut, and context menu entry.
@@ -41,10 +31,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 #### Changed
 
+- **Encoding detection** defaults to UTF-8 when no BOM is present (no longer guesses GBK/Latin-1).
+- **Encoding → Open with encoding** shows a checkmark (✅) on the active profile for at-a-glance feedback.
+- Toolbar buttons are **icon-only** with hover tooltips (labels removed from the bar).
+- Minimap rendering moved from a separate side panel to the scroll strip (no gap between scrollbar and silhouette).
 - Default editor font size increased to **16px**; line numbers use a fixed **14px** font.
 - Fold gutter moved left of line numbers so line numbers sit flush against the editor.
 - Line numbers and content-extent line shifted **2px** left for clearer separation from the editor pane.
 - Save/save-as now writes files using the tab's selected encoding profile.
+
+#### Fixed
+
+- **Scroll wheel jitter**: auto-scroll-to-cursor runs only when the cursor moves, not while wheel/scrollbar scrolling.
 
 ### [0.1.2](https://github.com/joyoki/rustpad/compare/v0.1.1...v0.1.2) - 2026-06-23
 
@@ -83,24 +81,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### [未发布]
 
+### [0.1.3](https://github.com/joyoki/rustpad/compare/v0.1.2...v0.1.3) - 2026-06-24
+
 #### 新增
 
 - **macOS 原生菜单栏**（Apple Silicon 刘海屏 / 菜单栏集成）：通过 `muda` 提供与 Windows/Linux 一致的完整菜单（文件、编辑、视图、编码、工具、设置、帮助）。
 - **快速滚动条**（Notepad++ 风格）：窄条轨道、上下箭头、可拖滑块、点击轨道跳转、滚轮滚动及右键菜单（滚动到光标、顶/底、翻页等）。
 - **滚动条旁内联文档剪影**：灰色行条映射全文；蓝色视口带随滚动位置移动，支持点击/拖拽跳转。
 - **工具栏字号输入框**：可直接输入 8–72 px，不仅限于 +/- 按钮。
-
-#### 变更
-
-- **编码检测**在无 BOM 时默认 UTF-8（不再启发式猜测 GBK/Latin-1）。
-- **编码 → 使用编码打开**在当前编码前显示 ✅ 勾选，所见即所得。
-- 工具栏按钮改为**仅图标**，悬停显示说明文字。
-- 缩略图/剪影从独立侧边栏移至滚动条右侧（消除滚动条与剪影之间的空白间隙）。
-
-#### 修复
-
-- **滚轮滚动抖动**：仅在光标移动时自动滚到光标可见，滚轮/拖滑块滚动时不再抢回视图。
-
 - **编码菜单**（菜单栏）：使用指定编码打开、转换为指定编码、批量转换，支持 ANSI/GBK、UTF-8、UTF-8 BOM、UTF-16 等。
 - **设置菜单**：包含**首选项**与**快捷键管理**（Notepad++ / VS Code 方案、自定义按键、冲突检测）。
 - **列选择与列复制**：Alt+拖动矩形列选、菜单/快捷键列复制、右键菜单入口。
@@ -109,10 +97,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 #### 变更
 
+- **编码检测**在无 BOM 时默认 UTF-8（不再启发式猜测 GBK/Latin-1）。
+- **编码 → 使用编码打开**在当前编码前显示 ✅ 勾选，所见即所得。
+- 工具栏按钮改为**仅图标**，悬停显示说明文字。
+- 缩略图/剪影从独立侧边栏移至滚动条右侧（消除滚动条与剪影之间的空白间隙）。
 - 默认编辑字号调整为 **16px**；行号固定 **14px** 字体。
 - 折叠栏移至行号左侧，行号与编辑区紧挨显示。
 - 行号与橙色内容竖线向左偏移 **2px**，与编辑区留出更清晰间距。
 - 保存/另存为按标签页所选编码配置写入文件。
+
+#### 修复
+
+- **滚轮滚动抖动**：仅在光标移动时自动滚到光标可见，滚轮/拖滑块滚动时不再抢回视图。
 
 ### [0.1.2](https://github.com/joyoki/rustpad/compare/v0.1.1...v0.1.2) - 2026-06-23
 

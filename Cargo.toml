@@ -1,6 +1,6 @@
 [package]
 name = "rustpad"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2021"
 description = "A modern code editor built with Rust, inspired by Notepad++"
 license = "MIT"
@@ -65,7 +65,7 @@ codegen-units = 1
 name = "RustPad"
 identifier = "com.rustpad.editor"
 icon = []
-version = "0.1.2"
+version = "0.1.3"
 copyright = "2024-2026 RustPad Contributors"
 category = "Developer Tool"
 short_description = "A modern code editor with diff capabilities, inspired by Notepad++"

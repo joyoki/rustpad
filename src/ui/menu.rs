@@ -1,8 +1,11 @@
 use eframe::egui;
 
 use crate::app::RustpadApp;
+#[cfg(not(target_os = "macos"))]
 use crate::highlight::MENU_LANGUAGES;
+#[cfg(not(target_os = "macos"))]
 use crate::ui::encoding_menu::{self, EncodingMenuAction};
+#[cfg(not(target_os = "macos"))]
 use crate::ui::menu_actions::{self, MENU_FONT_SIZES};
 
 /// Render the top menu bar (in-window on Windows/Linux; macOS uses the system menu bar).

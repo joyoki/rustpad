@@ -14,6 +14,9 @@ pub struct Tab {
     pub cursor: Cursor,
     pub selection: Selection,
     pub scroll_offset: f32,
+    /// Last cursor position used for auto-scroll-to-cursor; when the cursor moves,
+    /// the view scrolls to keep it visible. Wheel/scrollbar scrolling does not reset this.
+    pub last_auto_scroll_cursor: Cursor,
     pub encoding: EncodingProfile,
     pub column_selection: bool,
     pub modified: bool,
@@ -37,6 +40,7 @@ impl Tab {
             cursor: Cursor::default(),
             selection: Selection::default(),
             scroll_offset: 0.0,
+            last_auto_scroll_cursor: Cursor::default(),
             encoding: EncodingProfile::default(),
             column_selection: false,
             modified: false,

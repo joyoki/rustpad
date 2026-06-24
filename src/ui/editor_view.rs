@@ -5,6 +5,7 @@ use crate::app::RustpadApp;
 use crate::editor::context_actions::{self, mark_line_color};
 use crate::editor::fold::FoldState;
 use crate::editor::Cursor;
+use crate::ui::scroll_bar;
 
 const LINE_NUMBER_FONT_SIZE: f32 = 14.0;
 const CONTENT_EXTENT_LINE_WIDTH: f32 = 2.0;
@@ -46,10 +47,57 @@ pub fn show(app: &mut RustpadApp, ctx: &egui::Context) {
         } else {
             0.0
         };
-        let total_gutter_width = gutter_width + FOLD_GUTTER_WIDTH + gutter_editor_gap;
+        let panel_rect = ui.available_rect_before_wrap();
+        let content_bottom = panel_rect.bottom() - scroll_bar::BAR_BOTTOM_SAFE_INSET;
+        let row_height = (content_bottom - panel_rect.top()).max(0.0);
+        let line_num_width = if show_line_numbers {
+            gutter_width + gutter_editor_gap
+        } else {
+            0.0
+        };
 
-        let available_width = ui.available_width() - total_gutter_width;
-        let available_height = ui.available_height();
+        let document_lines: Vec<&str> = text.lines().collect();
+        let minimap_enabled = app.minimap.enabled;
+        let silhouette_content_width = if minimap_enabled {
+            scroll_bar::compute_silhouette_content_width(&document_lines, app.minimap.width)
+        } else {
+            0.0
+        };
+        let strip_width = scroll_bar::quick_scroll_strip_width(
+            minimap_enabled,
+            silhouette_content_width,
+        );
+
+        let fold_rect = egui::Rect::from_min_size(
+            egui::pos2(panel_rect.left(), panel_rect.top()),
+            egui::vec2(FOLD_GUTTER_WIDTH, row_height),
+        );
+        let line_rect = egui::Rect::from_min_size(
+            egui::pos2(fold_rect.right(), panel_rect.top()),
+            egui::vec2(line_num_width, row_height),
+        );
+        let strip_rect = egui::Rect::from_min_max(
+            egui::pos2(panel_rect.right() - strip_width, panel_rect.top()),
+            egui::pos2(panel_rect.right(), content_bottom),
+        );
+        let scroll_rect = egui::Rect::from_min_max(
+            strip_rect.left_top(),
+            egui::pos2(strip_rect.left() + scroll_bar::QUICK_SCROLL_WIDTH, strip_rect.bottom()),
+        );
+        let silhouette_rect = if minimap_enabled {
+            egui::Rect::from_min_max(
+                scroll_rect.right_top(),
+                strip_rect.right_bottom(),
+            )
+        } else {
+            egui::Rect::NOTHING
+        };
+        let editor_rect = egui::Rect::from_min_max(
+            egui::pos2(line_rect.right(), panel_rect.top()),
+            egui::pos2(strip_rect.left(), content_bottom),
+        );
+        let available_width = editor_rect.width().max(0.0);
+        let available_height = row_height;
 
         let filename = file_path
             .as_ref()
@@ -80,17 +128,13 @@ pub fn show(app: &mut RustpadApp, ctx: &egui::Context) {
         let gutter_bg = crate::config::theme::EditorTheme::to_color32(editor_theme.gutter_bg);
         let gutter_fg = crate::config::theme::EditorTheme::to_color32(editor_theme.line_number_fg);
 
-        ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = 0.0;
-
-            if let Some(start_line) = draw_fold_gutter(
+        if let Some(start_line) = draw_fold_gutter(
                 ui,
+                fold_rect,
                 line_count,
                 scroll_offset,
                 line_height,
                 font_size,
-                FOLD_GUTTER_WIDTH,
-                available_height,
                 gutter_bg,
                 &app.tab_manager.active().editor_extras.fold_state,
             ) {
@@ -105,11 +149,11 @@ pub fn show(app: &mut RustpadApp, ctx: &egui::Context) {
             if show_line_numbers {
                 draw_line_numbers(
                     ui,
+                    line_rect,
                     line_count,
                     scroll_offset,
                     line_height,
                     gutter_width,
-                    available_height,
                     gutter_bg,
                     gutter_fg,
                     &line_marks,
@@ -118,10 +162,6 @@ pub fn show(app: &mut RustpadApp, ctx: &egui::Context) {
             }
 
             let fold_state = app.tab_manager.active().editor_extras.fold_state.clone();
-            let editor_rect = egui::Rect::from_min_size(
-                ui.cursor().left_top(),
-                egui::vec2(available_width, available_height),
-            );
             let response = ui.allocate_rect(editor_rect, egui::Sense::click_and_drag());
             let painter = ui.painter();
 
@@ -166,8 +206,9 @@ pub fn show(app: &mut RustpadApp, ctx: &egui::Context) {
 
             let modal_blocks_focus = app.blocks_editor_focus();
 
-            // Focus management: restore focus from last frame (never steal from dialogs).
-            if app.editor_has_focus && !modal_blocks_focus {
+            // Focus management: restore focus from last frame (never steal from dialogs
+            // or the toolbar font-size field).
+            if app.editor_has_focus && !modal_blocks_focus && !app.toolbar_font_size_editing {
                 response.request_focus();
             }
 
@@ -304,27 +345,51 @@ pub fn show(app: &mut RustpadApp, ctx: &egui::Context) {
                 }
             }
 
-            // Auto-focus on first frame (not while a dialog is open).
-            if !modal_blocks_focus && ctx.memory(|m| m.focused().is_none()) {
+            // Auto-focus on first frame (not while a dialog or toolbar font field is open).
+            if !modal_blocks_focus
+                && !app.toolbar_font_size_editing
+                && ctx.memory(|m| m.focused().is_none())
+            {
                 response.request_focus();
             }
 
-            // Store focus state for next frame
+            // Store focus state for next frame (toolbar font field owns the keyboard).
             let has_focus = response.has_focus();
-            app.editor_has_focus = has_focus;
+            if app.toolbar_font_size_editing {
+                app.editor_has_focus = false;
+            } else {
+                app.editor_has_focus = has_focus;
+            }
 
-            // Handle scroll
-            if response.hovered() {
-                let scroll_delta = ui.input(|i| i.raw_scroll_delta.y);
+            // Handle scroll (wheel); do not fight with auto-scroll-to-cursor below.
+            let visible_line_total = fold_state.visible_line_count(line_count);
+            let max_scroll =
+                scroll_bar::max_scroll_offset(visible_line_total, line_height, available_height);
+
+            if response.hovered() || has_focus {
+                let scroll_delta = ui.input(|i| {
+                    if i.smooth_scroll_delta.y != 0.0 {
+                        i.smooth_scroll_delta.y
+                    } else {
+                        i.raw_scroll_delta.y
+                    }
+                });
                 if scroll_delta != 0.0 {
-                    app.tab_manager.active_mut().scroll_offset =
-                        (app.tab_manager.active().scroll_offset - scroll_delta).max(0.0);
+                    let tab = app.tab_manager.active_mut();
+                    scroll_bar::apply_wheel_scroll(
+                        &mut tab.scroll_offset,
+                        scroll_delta,
+                        max_scroll,
+                    );
+                    tab.last_auto_scroll_cursor = tab.cursor;
+                    scroll_bar::consume_editor_wheel(ctx, true);
+                } else if response.hovered() {
+                    scroll_bar::consume_editor_wheel(ctx, false);
                 }
             }
 
             let start_pos = editor_rect.left_top();
             let current_scroll = app.tab_manager.active().scroll_offset;
-            let visible_line_total = fold_state.visible_line_count(line_count);
             let first_visible_display = (current_scroll / line_height) as usize;
             let visible_lines_on_screen = (available_height / line_height) as usize + 2;
 
@@ -613,16 +678,45 @@ pub fn show(app: &mut RustpadApp, ctx: &egui::Context) {
                 handle_keyboard_input(app, ctx);
             }
 
-            // Keep cursor within visible area
-            let cursor_line_for_scroll = app.tab_manager.active().cursor.line;
-            ensure_cursor_visible(
-                &mut app.tab_manager.active_mut().scroll_offset,
-                cursor_line_for_scroll,
+            // Auto-scroll only when the cursor moves (typing, clicks, arrows) — not every
+            // frame, otherwise wheel scrolling jitters as the view snaps back to the cursor.
+            let cursor_for_scroll = app.tab_manager.active().cursor;
+            if app.tab_manager.active().last_auto_scroll_cursor != cursor_for_scroll {
+                let tab = app.tab_manager.active_mut();
+                ensure_cursor_visible(
+                    &mut tab.scroll_offset,
+                    cursor_for_scroll.line,
+                    line_height,
+                    available_height,
+                    &fold_state,
+                );
+                tab.last_auto_scroll_cursor = cursor_for_scroll;
+            }
+
+            scroll_bar::show_quick_scroll_bar(
+                ui,
+                app,
+                scroll_rect,
                 line_height,
-                available_height,
+                visible_line_total,
                 &fold_state,
+                gutter_bg,
             );
-        });
+
+            if minimap_enabled {
+                scroll_bar::paint_document_silhouette(
+                    ui,
+                    ctx,
+                    app,
+                    silhouette_rect,
+                    &document_lines,
+                    app.tab_manager.active().scroll_offset,
+                    visible_line_total,
+                    line_height,
+                    app.minimap.width,
+                    gutter_bg,
+                );
+            }
     });
 
     crate::ui::editor_context_menu::show(app, ctx);
@@ -717,27 +811,24 @@ fn ensure_cursor_visible(
     } else if cursor_bottom > *scroll_offset + viewport_height {
         *scroll_offset = (cursor_bottom - viewport_height).max(0.0);
     }
+    *scroll_offset = scroll_offset.round();
 }
 
 #[allow(clippy::too_many_arguments)]
 fn draw_fold_gutter(
     ui: &mut egui::Ui,
+    gutter_rect: egui::Rect,
     line_count: usize,
     scroll_offset: f32,
     line_height: f32,
     font_size: f32,
-    fold_gutter_width: f32,
-    available_height: f32,
     gutter_bg: Color32,
     fold_state: &FoldState,
 ) -> Option<usize> {
-    let gutter_rect = egui::Rect::from_min_size(
-        ui.cursor().left_top(),
-        egui::vec2(fold_gutter_width, available_height),
-    );
     ui.allocate_rect(gutter_rect, egui::Sense::hover());
 
     let origin = gutter_rect.left_top();
+    let available_height = gutter_rect.height();
 
     let icon_yellow = Color32::from_rgb(255, 224, 120);
     let icon_border = Color32::from_rgb(170, 150, 70);
@@ -909,11 +1000,11 @@ fn draw_content_extent_line(
 #[allow(clippy::too_many_arguments)]
 fn draw_line_numbers(
     ui: &mut egui::Ui,
+    gutter_rect: egui::Rect,
     line_count: usize,
     scroll_offset: f32,
     line_height: f32,
     gutter_width: f32,
-    available_height: f32,
     gutter_bg: Color32,
     gutter_fg: Color32,
     line_marks: &std::collections::HashMap<usize, u8>,
@@ -921,12 +1012,9 @@ fn draw_line_numbers(
 ) {
     let visible_line_total = fold_state.visible_line_count(line_count);
     let first_visible_display = (scroll_offset / line_height) as usize;
+    let available_height = gutter_rect.height();
     let visible_lines_on_screen = (available_height / line_height) as usize + 2;
 
-    let gutter_rect = egui::Rect::from_min_size(
-        ui.cursor().left_top(),
-        egui::vec2(gutter_width + GUTTER_EDITOR_GAP, available_height),
-    );
     ui.allocate_rect(gutter_rect, egui::Sense::hover());
 
     let painter = ui.painter();

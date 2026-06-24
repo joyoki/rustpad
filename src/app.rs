@@ -229,6 +229,11 @@ pub struct RustpadApp {
     pub context_menu_selection: Option<crate::editor::Selection>,
     /// Background marks carried with clipboard cut/copy for paste.
     clipboard_marks: Vec<crate::editor::context_actions::RelativeTextMark>,
+
+    /// Toolbar font-size text field buffer (kept on app so typing is not reset each frame).
+    pub toolbar_font_size_text: String,
+    /// True while the toolbar font-size field is focused (blocks external text sync).
+    pub toolbar_font_size_editing: bool,
 }
 
 impl RustpadApp {
@@ -238,6 +243,7 @@ impl RustpadApp {
         setup_cjk_fonts(cc);
 
         let config = AppConfig::load();
+        let toolbar_font_size_text = format!("{}", config.editor.font_size as u32);
         let session = Session::load();
         let mut tab_manager = if session.open_files.is_empty() {
             TabManager::new()
@@ -373,6 +379,8 @@ impl RustpadApp {
             context_menu_pos: egui::Pos2::ZERO,
             context_menu_selection: None,
             clipboard_marks: Vec::new(),
+            toolbar_font_size_text,
+            toolbar_font_size_editing: false,
         };
 
         app.apply_theme(&cc.egui_ctx);
@@ -2274,7 +2282,6 @@ impl eframe::App for RustpadApp {
         crate::ui::diff_toolbar::show(self, ctx);
         crate::ui::tab_bar::show(self, ctx);
         crate::ui::sidebar::show(self, ctx);
-        crate::ui::minimap::show(self, ctx);
         crate::ui::editor_view::show(self, ctx);
         // Search dialog must render after the editor so it stays on top and keeps focus.
         crate::ui::search_panel::show(self, ctx);

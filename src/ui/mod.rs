@@ -13,6 +13,7 @@ pub mod keybindings_dialog;
 pub mod layout;
 pub mod menu;
 pub mod minimap;
+pub mod scroll_bar;
 pub mod search_panel;
 pub mod sidebar;
 pub mod split_view;

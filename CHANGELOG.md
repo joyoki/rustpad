@@ -17,6 +17,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 #### Added
 
+- **Quick scroll bar** (Notepad++ style): narrow strip with up/down arrows, draggable thumb, track click, wheel scroll, and context menu (scroll to cursor, top/bottom, page up/down).
+- **Inline document silhouette** beside the scroll bar: gray line bars map the full file; a viewport band follows scroll position and supports click/drag to jump.
+- **Toolbar font size field**: type a value (8–72 px) directly instead of only using +/- buttons.
+
+#### Changed
+
+- Toolbar buttons are **icon-only** with hover tooltips (labels removed from the bar).
+- Minimap rendering moved from a separate side panel to the scroll strip (no gap between scrollbar and silhouette).
+
+#### Fixed
+
+- **Scroll wheel jitter**: auto-scroll-to-cursor runs only when the cursor moves, not while wheel/scrollbar scrolling.
+
 - **Encoding menu** (menu bar): open with encoding, convert to encoding, and batch convert for ANSI/GBK, UTF-8, UTF-8 BOM, UTF-16, and more.
 - **Settings menu** with **Preferences** and **Keyboard Shortcuts** editor (Notepad++ / VS Code presets, rebind keys, conflict detection).
 - **Column selection and copy**: Alt+drag rectangular selection, column copy via menu/shortcut, and context menu entry.
@@ -68,6 +81,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### [未发布]
 
 #### 新增
+
+- **快速滚动条**（Notepad++ 风格）：窄条轨道、上下箭头、可拖滑块、点击轨道跳转、滚轮滚动及右键菜单（滚动到光标、顶/底、翻页等）。
+- **滚动条旁内联文档剪影**：灰色行条映射全文；蓝色视口带随滚动位置移动，支持点击/拖拽跳转。
+- **工具栏字号输入框**：可直接输入 8–72 px，不仅限于 +/- 按钮。
+
+#### 变更
+
+- 工具栏按钮改为**仅图标**，悬停显示说明文字。
+- 缩略图/剪影从独立侧边栏移至滚动条右侧（消除滚动条与剪影之间的空白间隙）。
+
+#### 修复
+
+- **滚轮滚动抖动**：仅在光标移动时自动滚到光标可见，滚轮/拖滑块滚动时不再抢回视图。
 
 - **编码菜单**（菜单栏）：使用指定编码打开、转换为指定编码、批量转换，支持 ANSI/GBK、UTF-8、UTF-8 BOM、UTF-16 等。
 - **设置菜单**：包含**首选项**与**快捷键管理**（Notepad++ / VS Code 方案、自定义按键、冲突检测）。

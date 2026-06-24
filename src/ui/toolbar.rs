@@ -1,6 +1,7 @@
 use eframe::egui;
 
 use crate::app::RustpadApp;
+use crate::ui::encoding_menu;
 
 const FONT_SIZE_MIN: u32 = 8;
 const FONT_SIZE_MAX: u32 = 72;
@@ -120,6 +121,12 @@ pub fn show(app: &mut RustpadApp, ctx: &egui::Context) {
             if toolbar_button(ui, t.tb_compare, t.tip_compare, true) {
                 app.pending_compare_files = true;
             }
+            ui.menu_button(t.tb_encoding, |ui| {
+                let enc_action = encoding_menu::show_menu(ui, app);
+                crate::ui::menu_actions::apply_encoding_action(app, enc_action);
+            })
+            .response
+            .on_hover_text(t.tip_encoding);
             ui.separator();
             if ui.button("A-").on_hover_text(t.tip_font_dec).clicked() {
                 app.config.editor.font_size = (app.config.editor.font_size - 1.0).max(8.0);

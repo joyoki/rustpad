@@ -17,12 +17,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 #### Added
 
+- **macOS native menu bar** (Apple Silicon notch / menu bar integration): full menu parity with Windows/Linux via `muda`, including File, Edit, View, Encoding, Tools, Settings, and Help.
 - **Quick scroll bar** (Notepad++ style): narrow strip with up/down arrows, draggable thumb, track click, wheel scroll, and context menu (scroll to cursor, top/bottom, page up/down).
 - **Inline document silhouette** beside the scroll bar: gray line bars map the full file; a viewport band follows scroll position and supports click/drag to jump.
 - **Toolbar font size field**: type a value (8–72 px) directly instead of only using +/- buttons.
 
 #### Changed
 
+- **Encoding detection** defaults to UTF-8 when no BOM is present (no longer guesses GBK/Latin-1).
+- **Encoding → Open with encoding** shows a checkmark (✅) on the active profile for at-a-glance feedback.
 - Toolbar buttons are **icon-only** with hover tooltips (labels removed from the bar).
 - Minimap rendering moved from a separate side panel to the scroll strip (no gap between scrollbar and silhouette).
 
@@ -82,12 +85,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 #### 新增
 
+- **macOS 原生菜单栏**（Apple Silicon 刘海屏 / 菜单栏集成）：通过 `muda` 提供与 Windows/Linux 一致的完整菜单（文件、编辑、视图、编码、工具、设置、帮助）。
 - **快速滚动条**（Notepad++ 风格）：窄条轨道、上下箭头、可拖滑块、点击轨道跳转、滚轮滚动及右键菜单（滚动到光标、顶/底、翻页等）。
 - **滚动条旁内联文档剪影**：灰色行条映射全文；蓝色视口带随滚动位置移动，支持点击/拖拽跳转。
 - **工具栏字号输入框**：可直接输入 8–72 px，不仅限于 +/- 按钮。
 
 #### 变更
 
+- **编码检测**在无 BOM 时默认 UTF-8（不再启发式猜测 GBK/Latin-1）。
+- **编码 → 使用编码打开**在当前编码前显示 ✅ 勾选，所见即所得。
 - 工具栏按钮改为**仅图标**，悬停显示说明文字。
 - 缩略图/剪影从独立侧边栏移至滚动条右侧（消除滚动条与剪影之间的空白间隙）。
 

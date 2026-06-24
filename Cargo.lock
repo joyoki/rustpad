@@ -3053,6 +3053,7 @@ dependencies = [
  "egui",
  "encoding_rs",
  "env_logger",
+ "image",
  "log",
  "muda",
  "regex",

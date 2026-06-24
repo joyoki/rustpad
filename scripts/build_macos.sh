@@ -35,7 +35,11 @@ mkdir -p "${APP_DIR}/Contents/Resources"
 cp "${PROJECT_DIR}/target/release/rustpad" "${APP_DIR}/Contents/MacOS/${APP_NAME}"
 chmod +x "${APP_DIR}/Contents/MacOS/${APP_NAME}"
 
-cat > "${APP_DIR}/Contents/Info.plist" << 'PLIST'
+if [ -f "${PROJECT_DIR}/assets/icon.icns" ]; then
+    cp "${PROJECT_DIR}/assets/icon.icns" "${APP_DIR}/Contents/Resources/icon.icns"
+fi
+
+cat > "${APP_DIR}/Contents/Info.plist" << PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -56,6 +60,8 @@ cat > "${APP_DIR}/Contents/Info.plist" << 'PLIST'
     <string>APPL</string>
     <key>CFBundleSignature</key>
     <string>????</string>
+    <key>CFBundleIconFile</key>
+    <string>icon</string>
     <key>LSMinimumSystemVersion</key>
     <string>12.0</string>
     <key>NSHighResolutionCapable</key>

@@ -235,6 +235,11 @@ pub struct RustpadApp {
     /// True while the toolbar font-size field is focused (blocks external text sync).
     pub toolbar_font_size_editing: bool,
 
+    /// In-app logo texture (About dialog, startup splash).
+    pub logo_texture: egui::TextureHandle,
+    /// Wall-clock time until the startup splash is hidden (`None` after dismiss).
+    splash_until: Option<f64>,
+
     /// Native macOS menu bar (system menu after the app name).
     #[cfg(target_os = "macos")]
     pub macos_menu: Option<muda::Menu>,
@@ -249,6 +254,8 @@ impl RustpadApp {
         log::info!("Initializing RustPad application...");
 
         setup_cjk_fonts(cc);
+        let logo_texture = crate::branding::load_logo_texture(&cc.egui_ctx);
+        let splash_until = cc.egui_ctx.input(|i| i.time + 1.4);
 
         let config = AppConfig::load();
         let toolbar_font_size_text = format!("{}", config.editor.font_size as u32);
@@ -389,6 +396,8 @@ impl RustpadApp {
             clipboard_marks: Vec::new(),
             toolbar_font_size_text,
             toolbar_font_size_editing: false,
+            logo_texture,
+            splash_until: Some(splash_until),
             #[cfg(target_os = "macos")]
             macos_menu: None,
             #[cfg(target_os = "macos")]
@@ -2316,6 +2325,15 @@ impl eframe::App for RustpadApp {
         }
         if self.show_unsaved_dialog {
             crate::ui::dialogs::show_unsaved_dialog(self, ctx);
+        }
+
+        if let Some(until) = self.splash_until {
+            if ctx.input(|i| i.time) < until {
+                crate::branding::paint_startup_splash(ctx, &self.logo_texture);
+                ctx.request_repaint();
+            } else {
+                self.splash_until = None;
+            }
         }
 
         // Native file dialogs must run after UI rendering (macOS requirement).

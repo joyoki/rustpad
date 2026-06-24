@@ -5,6 +5,7 @@
 #![allow(clippy::needless_range_loop)]
 
 mod app;
+mod branding;
 mod config;
 mod diff;
 mod editor;
@@ -41,7 +42,8 @@ fn main() -> eframe::Result {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([1280.0, 720.0])
             .with_min_inner_size([800.0, 600.0])
-            .with_title("RustPad"),
+            .with_title("RustPad")
+            .with_icon(branding::load_window_icon()),
         renderer: eframe::Renderer::Glow,
         ..Default::default()
     };

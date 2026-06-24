@@ -102,7 +102,10 @@ jobs:
           mkdir -p "${APP_DIR}/Contents/MacOS" "${APP_DIR}/Contents/Resources"
           cp target/release/rustpad "${APP_DIR}/Contents/MacOS/${APP_NAME}"
           chmod +x "${APP_DIR}/Contents/MacOS/${APP_NAME}"
-          python3 -c "from pathlib import Path; v='${VERSION}'; Path('${APP_DIR}/Contents/Info.plist').write_text(f'<?xml version=\"1.0\" encoding=\"UTF-8\"?><!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\"><plist version=\"1.0\"><dict><key>CFBundleExecutable</key><string>RustPad</string><key>CFBundleIdentifier</key><string>com.rustpad.editor</string><key>CFBundleName</key><string>RustPad</string><key>CFBundleDisplayName</key><string>RustPad</string><key>CFBundleShortVersionString</key><string>{v}</string><key>CFBundleVersion</key><string>{v}</string><key>CFBundlePackageType</key><string>APPL</string><key>LSMinimumSystemVersion</key><string>10.15</string><key>NSHighResolutionCapable</key><true/></dict></plist>')"
+          if [ -f assets/icon.icns ]; then
+            cp assets/icon.icns "${APP_DIR}/Contents/Resources/icon.icns"
+          fi
+          python3 -c "from pathlib import Path; v='${VERSION}'; icon='''    <key>CFBundleIconFile</key>\n    <string>icon</string>\n''' if Path('assets/icon.icns').exists() else ''; Path('${APP_DIR}/Contents/Info.plist').write_text(f'<?xml version=\"1.0\" encoding=\"UTF-8\"?><!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\"><plist version=\"1.0\"><dict><key>CFBundleExecutable</key><string>RustPad</string><key>CFBundleIdentifier</key><string>com.rustpad.editor</string><key>CFBundleName</key><string>RustPad</string><key>CFBundleDisplayName</key><string>RustPad</string><key>CFBundleShortVersionString</key><string>{v}</string><key>CFBundleVersion</key><string>{v}</string><key>CFBundlePackageType</key><string>APPL</string>{icon}<key>LSMinimumSystemVersion</key><string>10.15</string><key>NSHighResolutionCapable</key><true/></dict></plist>')"
           codesign --force --deep --sign - "${APP_DIR}" || true
           (cd dist && zip -rq "rustpad-${TAG}-macos.app.zip" "${APP_NAME}.app")
           DMG_PATH="dist/rustpad-${TAG}-macos.dmg"

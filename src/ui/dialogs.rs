@@ -113,6 +113,11 @@ fn show_about_dialog(app: &mut RustpadApp, ctx: &egui::Context) {
         .open(&mut open)
         .show(ctx, |ui| {
             ui.vertical_centered(|ui| {
+                let logo_size = 96.0;
+                ui.image((
+                    app.logo_texture.id(),
+                    egui::vec2(logo_size, logo_size),
+                ));
                 ui.heading("RustPad");
                 ui.label(t.about_tagline);
                 ui.label(format!("Version {}", env!("CARGO_PKG_VERSION")));

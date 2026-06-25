@@ -15,6 +15,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### [Unreleased]
 
+### [0.1.4](https://github.com/joyoki/rustpad/compare/v0.1.3...v0.1.4) - 2026-06-23
+
+#### Added
+
+- **Scintilla-style character selection**: `line_layout` precomputes per-character positions; clicks snap to the nearest boundary; drag selection tracks anchor and releases cleanly.
+- **Sidebar and toolbar localization** (i18n) with responsive toolbar (icon-only vs icon + label) and long-path ellipsis in the file tree.
+- **Tab context menu**: close, close others, close all, copy path, reveal in folder, open terminal.
+- **Search history** for recent find queries.
+- **Drag-and-drop** files onto the window to open.
+- **GBK and Latin-1 encoding detection** when no BOM is present.
+- **Platform shell helpers** to reveal files in the OS file manager and open a terminal at the file path.
+- **macOS release pipeline** reads version from `Cargo.toml`; DMG packaging in CI.
+
+#### Changed
+
+- Toolbar height raised to **30px** with **14px** labels; font-size input field text centered.
+- Optimized logo and icon assets for sharper rendering.
+- Clippy clean; UI call sites refactored with parameter structs.
+
+#### Fixed
+
+- **Windows** release builds as a GUI application (no console window).
+- **Atomic file writes** via temp file + rename; save/save-as surfaces write failures.
+- Diff HTML export escapes content and reports write errors.
+- **macOS ad-hoc codesign** repaired so DMG creation succeeds in release builds.
+- Scroll behavior improvements during search and tab navigation.
+
 ### [0.1.3](https://github.com/joyoki/rustpad/compare/v0.1.2...v0.1.3) - 2026-06-24
 
 #### Added
@@ -81,6 +108,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## 中文
 
 ### [未发布]
+
+### [0.1.4](https://github.com/joyoki/rustpad/compare/v0.1.3...v0.1.4) - 2026-06-23
+
+#### 新增
+
+- **Scintilla 风格逐字符选择**：`line_layout` 预计算字符位置；点击吸附最近边界；拖拽选区正确跟踪锚点并干净释放。
+- **侧栏与工具栏本地化**（i18n），响应式工具栏（仅图标 / 图标+文字），文件树长路径省略显示。
+- **标签页右键菜单**：关闭、关闭其他、全部关闭、复制路径、在文件夹中显示、打开终端。
+- **搜索历史**记录最近查找内容。
+- **拖放文件**到窗口打开。
+- 无 BOM 时恢复 **GBK / Latin-1** 编码检测。
+- **平台脚本辅助**：在系统文件管理器中显示文件、在路径处打开终端。
+- **macOS 发布流程**从 `Cargo.toml` 读取版本；CI 产出 DMG。
+
+#### 变更
+
+- 工具栏高度 **30px**、标签 **14px**；字号输入框文字居中。
+- 优化 logo 与图标资源，显示更清晰。
+- 全项目通过 Clippy；UI 调用点用参数结构体重构。
+
+#### 修复
+
+- **Windows** 发布版以 GUI 程序构建（无控制台窗口）。
+- **原子文件写入**（临时文件 + 重命名）；保存/另存为显示写入失败。
+- Diff HTML 导出正确转义并报告写入错误。
+- 修复 **macOS ad-hoc 签名**，发布构建可成功生成 DMG。
+- 搜索与标签切换时的滚动体验改进。
 
 ### [0.1.3](https://github.com/joyoki/rustpad/compare/v0.1.2...v0.1.3) - 2026-06-24
 

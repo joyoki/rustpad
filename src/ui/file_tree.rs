@@ -167,10 +167,12 @@ pub fn show(app: &mut crate::app::RustpadApp, ctx: &egui::Context) {
         return;
     }
 
+    let t = app.tr();
     egui::SidePanel::left("file_tree_panel")
         .default_width(250.0)
+        .min_width(180.0)
         .show(ctx, |ui| {
-            ui.heading("File Explorer");
+            ui.heading(t.sidebar_file_explorer);
             ui.separator();
 
             if let Some(workspace) = &app.workspace_root.clone() {
@@ -184,8 +186,8 @@ pub fn show(app: &mut crate::app::RustpadApp, ctx: &egui::Context) {
                     }
                 });
             } else {
-                ui.label("No workspace open");
-                if ui.button("Open Folder...").clicked() {
+                ui.label(t.sidebar_no_workspace);
+                if ui.button(t.sidebar_open_folder).clicked() {
                     if let Some(path) = rfd::FileDialog::new().pick_folder() {
                         app.open_workspace_folder(path);
                     }

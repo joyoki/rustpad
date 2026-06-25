@@ -6,6 +6,16 @@ use crate::ui::encoding_menu;
 const FONT_SIZE_MIN: u32 = 8;
 const FONT_SIZE_MAX: u32 = 72;
 const FONT_SIZE_FIELD_ID: &str = "rustpad_toolbar_font_size";
+/// Below this width, toolbar shows icons only; wider layouts show icon + label.
+const TOOLBAR_COMPACT_WIDTH: f32 = 820.0;
+
+fn toolbar_label(icon: &str, text: &str, compact: bool) -> String {
+    if compact {
+        icon.to_string()
+    } else {
+        format!("{icon} {text}")
+    }
+}
 
 /// Toolbar icon button with hover tooltip; disabled buttons still show the tooltip.
 fn toolbar_button(ui: &mut egui::Ui, label: &str, tooltip: &str, enabled: bool) -> bool {
@@ -95,33 +105,71 @@ fn show_font_size_input(
 pub fn show(app: &mut RustpadApp, ctx: &egui::Context) {
     let t = app.tr();
     egui::TopBottomPanel::top("toolbar").show(ctx, |ui| {
-        ui.horizontal(|ui| {
-            if toolbar_button(ui, t.tb_new, t.tip_new, true) {
+        let compact = ui.available_width() < TOOLBAR_COMPACT_WIDTH;
+        ui.horizontal_wrapped(|ui| {
+            ui.spacing_mut().item_spacing.x = 4.0;
+            if toolbar_button(
+                ui,
+                &toolbar_label(t.tb_new, t.tb_label_new, compact),
+                t.tip_new,
+                true,
+            ) {
                 app.tab_manager.new_tab();
             }
-            if toolbar_button(ui, t.tb_open, t.tip_open, true) {
+            if toolbar_button(
+                ui,
+                &toolbar_label(t.tb_open, t.tb_label_open, compact),
+                t.tip_open,
+                true,
+            ) {
                 app.pending_open_file = true;
             }
-            if toolbar_button(ui, t.tb_save, t.tip_save, true) {
+            if toolbar_button(
+                ui,
+                &toolbar_label(t.tb_save, t.tb_label_save, compact),
+                t.tip_save,
+                true,
+            ) {
                 app.save_current_tab();
             }
             ui.separator();
             let can_undo = app.tab_manager.active().buffer.can_undo();
-            if toolbar_button(ui, t.tb_undo, t.tip_undo, can_undo) {
+            if toolbar_button(
+                ui,
+                &toolbar_label(t.tb_undo, t.tb_label_undo, compact),
+                t.tip_undo,
+                can_undo,
+            ) {
                 app.tab_manager.active_mut().buffer.undo();
             }
             let can_redo = app.tab_manager.active().buffer.can_redo();
-            if toolbar_button(ui, t.tb_redo, t.tip_redo, can_redo) {
+            if toolbar_button(
+                ui,
+                &toolbar_label(t.tb_redo, t.tb_label_redo, compact),
+                t.tip_redo,
+                can_redo,
+            ) {
                 app.tab_manager.active_mut().buffer.redo();
             }
             ui.separator();
-            if toolbar_button(ui, t.tb_find, t.tip_find, true) {
+            if toolbar_button(
+                ui,
+                &toolbar_label(t.tb_find, t.tb_label_find, compact),
+                t.tip_find,
+                true,
+            ) {
                 app.open_find(false);
             }
-            if toolbar_button(ui, t.tb_compare, t.tip_compare, true) {
+            if toolbar_button(
+                ui,
+                &toolbar_label(t.tb_compare, t.tb_label_compare, compact),
+                t.tip_compare,
+                true,
+            ) {
                 app.pending_compare_files = true;
             }
-            ui.menu_button(t.tb_encoding, |ui| {
+            let encoding_label = toolbar_label(t.tb_encoding, t.tb_label_encoding, compact);
+            ui.menu_button(encoding_label, |ui| {
                 let enc_action = encoding_menu::show_menu(ui, app);
                 crate::ui::menu_actions::apply_encoding_action(app, enc_action);
             })
@@ -176,5 +224,11 @@ mod tests {
         apply_font_size(&mut text, &mut size);
         assert_eq!(size, 20.0);
         assert_eq!(text, "20");
+    }
+
+    #[test]
+    fn toolbar_label_compact_vs_full() {
+        assert_eq!(toolbar_label("📄", "New", true), "📄");
+        assert_eq!(toolbar_label("📄", "New", false), "📄 New");
     }
 }

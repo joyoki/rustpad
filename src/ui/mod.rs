@@ -22,12 +22,5 @@ pub mod split_view;
 pub mod status_bar;
 pub mod tab_bar;
 pub mod tab_context_menu;
+pub mod text_util;
 pub mod toolbar;
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn test_ui_modules_compiles() {
-        assert!(true);
-    }
-}

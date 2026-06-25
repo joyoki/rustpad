@@ -25,31 +25,52 @@ fi
 sign_one() {
     local path="$1"
     local identity="$2"
-    local extra_args=("${@:3}")
+    shift 2
+    local -a extra_args=()
+    if [ "$#" -gt 0 ]; then
+        extra_args=("$@")
+    fi
+
+    run_codesign() {
+        local target="$1"
+        if ((${#extra_args[@]} > 0)); then
+            codesign --force "${extra_args[@]}" \
+                --entitlements "$ENTITLEMENTS" \
+                --sign "$identity" \
+                "$target"
+        else
+            codesign --force \
+                --entitlements "$ENTITLEMENTS" \
+                --sign "$identity" \
+                "$target"
+        fi
+    }
+
+    sign_file() {
+        local target="$1"
+        if ((${#extra_args[@]} > 0)); then
+            codesign --force "${extra_args[@]}" --sign "$identity" "$target"
+        else
+            codesign --force --sign "$identity" "$target"
+        fi
+    }
 
     if [ -d "$path" ] && [[ "$path" == *.app ]]; then
         local binary="${path}/Contents/MacOS/${APP_NAME}"
         if [ -f "$binary" ]; then
-            codesign --force "${extra_args[@]}" \
-                --entitlements "$ENTITLEMENTS" \
-                --sign "$identity" \
-                "$binary"
+            run_codesign "$binary"
         fi
-        codesign --force "${extra_args[@]}" \
-            --entitlements "$ENTITLEMENTS" \
-            --sign "$identity" \
-            "$path"
+        run_codesign "$path"
     else
-        codesign --force "${extra_args[@]}" \
-            --sign "$identity" \
-            "$path"
+        sign_file "$path"
     fi
 }
 
 case "$SIGN_MODE" in
     adhoc)
         echo ">>> codesign (adhoc): ${TARGET}"
-        sign_one "$TARGET" "-" --options=adhoc
+        # Ad-hoc signing uses identity "-" only; --options=adhoc is not valid on macOS.
+        sign_one "$TARGET" "-"
         ;;
     release)
         if [ -z "${MACOS_SIGN_IDENTITY:-}" ]; then

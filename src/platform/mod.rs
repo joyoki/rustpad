@@ -1,4 +1,6 @@
 /// Platform-specific abstractions.
+pub mod shell;
+
 #[cfg(target_os = "macos")]
 pub mod macos;
 #[cfg(target_os = "macos")]

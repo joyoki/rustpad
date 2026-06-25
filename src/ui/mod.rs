@@ -21,6 +21,7 @@ pub mod sidebar;
 pub mod split_view;
 pub mod status_bar;
 pub mod tab_bar;
+pub mod line_layout;
 pub mod tab_context_menu;
 pub mod text_util;
 pub mod toolbar;

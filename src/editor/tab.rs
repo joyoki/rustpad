@@ -19,6 +19,10 @@ pub struct Tab {
     pub last_auto_scroll_cursor: Cursor,
     pub encoding: EncodingProfile,
     pub column_selection: bool,
+    /// Anchor caret while the user is drag-selecting with the mouse.
+    pub mouse_drag_anchor: Option<Cursor>,
+    /// True after the current press extended a non-empty selection (incl. sub-threshold drags).
+    pub mouse_drag_extended: bool,
     pub modified: bool,
     /// Whether this tab is newly created (not yet saved).
     pub is_new: bool,
@@ -43,6 +47,8 @@ impl Tab {
             last_auto_scroll_cursor: Cursor::default(),
             encoding: EncodingProfile::default(),
             column_selection: false,
+            mouse_drag_anchor: None,
+            mouse_drag_extended: false,
             modified: false,
             is_new: true,
             syntax_override: None,

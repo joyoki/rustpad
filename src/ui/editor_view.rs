@@ -5,6 +5,7 @@ use crate::app::RustpadApp;
 use crate::editor::context_actions::{self, mark_line_color};
 use crate::editor::fold::FoldState;
 use crate::editor::Cursor;
+use crate::ui::line_layout::{EditorDisplayOpts, LineCaretLayout};
 use crate::ui::scroll_bar;
 
 const LINE_NUMBER_FONT_SIZE: f32 = 14.0;
@@ -12,45 +13,9 @@ const CONTENT_EXTENT_LINE_WIDTH: f32 = 2.0;
 /// Gap between line-number gutter (orange extent line) and the editor pane.
 const GUTTER_EDITOR_GAP: f32 = 2.0;
 
-#[derive(Clone, Copy)]
-struct EditorDisplayOpts {
-    font_size: f32,
-    display_blank: bool,
-    show_tabs_as_spaces: bool,
-    display_non_print: bool,
-}
-
-fn display_line_text(
-    line_text: &str,
-    display_blank: bool,
-    show_tabs_as_spaces: bool,
-    display_non_print: bool,
-) -> String {
-    let mut display = line_text.to_string();
-    if display_blank || show_tabs_as_spaces {
-        display = context_actions::visualize_whitespace(
-            &display,
-            display_blank,
-            show_tabs_as_spaces,
-        );
-    }
-    if display_non_print {
-        display = context_actions::visualize_non_prints(&display);
-    }
-    display
-}
-
 struct ColumnMapper<'a> {
     painter: &'a egui::Painter,
     opts: EditorDisplayOpts,
-}
-
-impl Copy for ColumnMapper<'_> {}
-
-impl Clone for ColumnMapper<'_> {
-    fn clone(&self) -> Self {
-        *self
-    }
 }
 
 impl<'a> ColumnMapper<'a> {
@@ -58,52 +23,16 @@ impl<'a> ColumnMapper<'a> {
         Self { painter, opts }
     }
 
-    fn col_to_x(&self, base_x: f32, line_text: &str, col: usize) -> f32 {
-        let prefix: String = line_text.chars().take(col).collect();
-        let display = display_line_text(
-            &prefix,
-            self.opts.display_blank,
-            self.opts.show_tabs_as_spaces,
-            self.opts.display_non_print,
-        );
-        if display.is_empty() {
-            return base_x;
-        }
-        let galley = self.painter.layout_no_wrap(
-            display,
-            egui::FontId::monospace(self.opts.font_size),
-            Color32::TRANSPARENT,
-        );
-        base_x + galley.size().x
+    const fn display_opts(&self) -> EditorDisplayOpts {
+        self.opts
     }
 
-    fn x_to_col(&self, base_x: f32, line_text: &str, rel_x: f32) -> usize {
-        let line_len = line_text.chars().count();
-        if line_len == 0 {
-            return 0;
-        }
+    fn measure_line(&self, line_text: &str) -> LineCaretLayout {
+        LineCaretLayout::measure(self.painter, self.opts, line_text)
+    }
 
-        let target_x = base_x + rel_x.max(0.0);
-        let mut lo = 0usize;
-        let mut hi = line_len;
-
-        while lo < hi {
-            let mid = lo + (hi - lo) / 2;
-            if self.col_to_x(base_x, line_text, mid) < target_x {
-                lo = mid + 1;
-            } else {
-                hi = mid;
-            }
-        }
-
-        if lo > 0 {
-            let x_prev = self.col_to_x(base_x, line_text, lo - 1);
-            let x_lo = self.col_to_x(base_x, line_text, lo);
-            if target_x - x_prev < x_lo - target_x {
-                return lo - 1;
-            }
-        }
-        lo.min(line_len)
+    fn col_to_x(&self, base_x: f32, layout: &LineCaretLayout, col: usize) -> f32 {
+        layout.col_to_x(base_x, col)
     }
 
     fn pointer_to_cursor(
@@ -113,9 +42,18 @@ impl<'a> ColumnMapper<'a> {
         line: usize,
         line_text: &str,
     ) -> Cursor {
+        let layout = self.measure_line(line_text);
         let rel_x = pointer_pos.x - editor_rect.left();
-        let col = self.x_to_col(editor_rect.left(), line_text, rel_x);
+        let col = layout.caret_col_from_rel_x(rel_x);
         Cursor::new(line, col)
+    }
+}
+
+impl Copy for ColumnMapper<'_> {}
+
+impl Clone for ColumnMapper<'_> {
+    fn clone(&self) -> Self {
+        *self
     }
 }
 
@@ -358,119 +296,108 @@ pub fn show(app: &mut RustpadApp, ctx: &egui::Context) {
             }
 
             // Mouse: click, drag-select, double-click word select (skip while menu open).
+            //
+            // Scintilla/notepad-- keeps the mouse captured from press to release and updates
+            // the stream selection on every move. egui only sets `dragged()` after a pixel
+            // threshold, so we must use `is_pointer_button_down_on()` and preserve a
+            // sub-threshold drag selection when `clicked()` fires on release.
             if !app.show_context_menu {
                 if let Some(pointer_pos) = response.interact_pointer_pos() {
                 let (shift, alt) = ui.input(|i| (i.modifiers.shift, i.modifiers.alt));
-                if response.drag_started() {
+                let pointer_line = line_from_pointer_y(
+                    pointer_pos,
+                    editor_rect,
+                    scroll_offset,
+                    line_height,
+                    line_count,
+                    &fold_state,
+                );
+                let line_text = app
+                    .tab_manager
+                    .active()
+                    .buffer
+                    .line(pointer_line)
+                    .unwrap_or_default()
+                    .to_string();
+                let line_len = line_text.chars().count();
+                let rel_x = pointer_pos.x - editor_rect.left();
+                let layout = column_mapper.measure_line(&line_text);
+                let caret_col = layout.caret_col_from_rel_x(rel_x).min(line_len);
+                let cursor = Cursor::new(pointer_line, caret_col);
+
+                if response.is_pointer_button_down_on() {
                     response.request_focus();
-                    let click_line = line_from_pointer_y(
-                        pointer_pos,
-                        editor_rect,
-                        scroll_offset,
-                        line_height,
-                        line_count,
-                        &fold_state,
-                    );
-                    let line_text = app
-                        .tab_manager
-                        .active()
-                        .buffer
-                        .line(click_line)
-                        .unwrap_or_default();
-                    let cursor = column_mapper.pointer_to_cursor(
-                        pointer_pos,
-                        editor_rect,
-                        click_line,
-                        line_text,
-                    );
-                    if shift {
-                        let anchor = {
+                    if app.tab_manager.active().mouse_drag_anchor.is_none() {
+                        let anchor = if shift {
                             let tab = app.tab_manager.active();
                             if tab.selection.is_empty() {
                                 tab.cursor
                             } else {
                                 tab.selection.start
                             }
+                        } else {
+                            cursor
                         };
-                        app.tab_manager.active_mut().selection =
-                            crate::editor::Selection::new(anchor, cursor);
-                    } else {
-                        app.tab_manager.active_mut().selection =
-                            crate::editor::Selection::cursor(cursor);
+                        let tab = app.tab_manager.active_mut();
+                        tab.mouse_drag_anchor = Some(anchor);
+                        tab.mouse_drag_extended = false;
+                        tab.column_selection = alt;
                     }
-                    app.tab_manager.active_mut().column_selection = alt;
-                    app.tab_manager.active_mut().cursor = cursor;
-                } else if response.dragged() {
-                    let click_line = line_from_pointer_y(
-                        pointer_pos,
-                        editor_rect,
-                        scroll_offset,
-                        line_height,
-                        line_count,
-                        &fold_state,
-                    );
-                    let line_text = app
+
+                    let anchor = app
                         .tab_manager
                         .active()
-                        .buffer
-                        .line(click_line)
-                        .unwrap_or_default();
-                    let cursor = column_mapper.pointer_to_cursor(
-                        pointer_pos,
-                        editor_rect,
-                        click_line,
-                        line_text,
-                    );
-                    let anchor = app.tab_manager.active().selection.start;
-                    app.tab_manager.active_mut().selection =
+                        .mouse_drag_anchor
+                        .unwrap_or(cursor);
+                    let selection =
                         crate::editor::Selection::new(anchor, cursor);
-                    app.tab_manager.active_mut().cursor = cursor;
+                    let tab = app.tab_manager.active_mut();
+                    tab.selection = selection;
+                    tab.cursor = cursor;
+                    if !selection.is_empty() {
+                        tab.mouse_drag_extended = true;
+                    }
                 } else if response.clicked() {
+                    let tab = app.tab_manager.active_mut();
+                    let drag_extended = tab.mouse_drag_extended;
+                    tab.mouse_drag_anchor = None;
+                    tab.mouse_drag_extended = false;
                     response.request_focus();
                     if response.double_clicked() {
+                        let char_idx = layout.char_index_from_rel_x(rel_x).min(line_len.saturating_sub(1));
+                        tab.cursor = Cursor::new(pointer_line, char_idx);
                         select_word_at_cursor(app);
+                    } else if drag_extended && !tab.selection.is_empty() {
+                        // Release after drag (even below egui's drag threshold): keep range.
+                        tab.cursor = cursor;
+                        if !alt {
+                            tab.column_selection = false;
+                        }
                     } else {
-                        let click_line = line_from_pointer_y(
-                            pointer_pos,
-                            editor_rect,
-                            scroll_offset,
-                            line_height,
-                            line_count,
-                            &fold_state,
-                        );
-                        let line_text = app
-                            .tab_manager
-                            .active()
-                            .buffer
-                            .line(click_line)
-                            .unwrap_or_default();
-                        let cursor = column_mapper.pointer_to_cursor(
-                            pointer_pos,
-                            editor_rect,
-                            click_line,
-                            line_text,
-                        );
                         if shift {
-                            let anchor = {
-                                let tab = app.tab_manager.active();
-                                if tab.selection.is_empty() {
-                                    tab.cursor
-                                } else {
-                                    tab.selection.start
-                                }
+                            let anchor = if tab.selection.is_empty() {
+                                tab.cursor
+                            } else {
+                                tab.selection.start
                             };
-                            app.tab_manager.active_mut().selection =
+                            tab.selection =
                                 crate::editor::Selection::new(anchor, cursor);
                             if alt {
-                                app.tab_manager.active_mut().column_selection = true;
+                                tab.column_selection = true;
                             }
                         } else {
-                            app.tab_manager.active_mut().selection =
+                            tab.selection =
                                 crate::editor::Selection::cursor(cursor);
-                            app.tab_manager.active_mut().column_selection = false;
+                            tab.column_selection = false;
                         }
-                        app.tab_manager.active_mut().cursor = cursor;
+                        tab.cursor = cursor;
                     }
+                } else if app.tab_manager.active().mouse_drag_anchor.is_some() {
+                    // Pointer released after a real drag: egui does not fire clicked() once
+                    // dragged() was true, so release the anchor but keep the selection.
+                    let tab = app.tab_manager.active_mut();
+                    tab.mouse_drag_anchor = None;
+                    tab.mouse_drag_extended = false;
                 }
                 }
             }
@@ -596,8 +523,9 @@ pub fn show(app: &mut RustpadApp, ctx: &egui::Context) {
                         .buffer
                         .line(i)
                         .unwrap_or_default();
-                    let x1 = column_mapper.col_to_x(start_pos.x, line_text, sel_start_col);
-                    let x2 = column_mapper.col_to_x(start_pos.x, line_text, sel_end_col);
+                    let layout = column_mapper.measure_line(line_text);
+                    let x1 = column_mapper.col_to_x(start_pos.x, &layout, sel_start_col);
+                    let x2 = column_mapper.col_to_x(start_pos.x, &layout, sel_end_col);
                     painter.rect_filled(
                         egui::Rect::from_min_max(
                             egui::pos2(x1, y),
@@ -655,33 +583,21 @@ pub fn show(app: &mut RustpadApp, ctx: &egui::Context) {
                 );
 
                 if let Some(line_spans) = highlighted.get(i) {
-                    let mut x = start_pos.x;
-                    for (style, text_segment) in line_spans {
-                        let mut display_seg = text_segment.clone();
-                        if display_blank || show_tabs_as_spaces {
-                            display_seg = context_actions::visualize_whitespace(
-                                &display_seg,
-                                display_blank,
-                                show_tabs_as_spaces,
-                            );
-                        }
-                        if display_non_print {
-                            display_seg = context_actions::visualize_non_prints(&display_seg);
-                        }
-                        let color = Color32::from_rgb(
-                            style.foreground.r,
-                            style.foreground.g,
-                            style.foreground.b,
-                        );
-                        let galley = painter.layout_no_wrap(
-                            display_seg,
-                            egui::FontId::monospace(font_size),
-                            color,
-                        );
-                        let galley_size = galley.size();
-                        painter.galley(egui::pos2(x, y), galley, Color32::WHITE);
-                        x += galley_size.x;
-                    }
+                    let line_text = app
+                        .tab_manager
+                        .active()
+                        .buffer
+                        .line(i)
+                        .unwrap_or_default();
+                    draw_highlighted_line_chars(
+                        painter,
+                        &column_mapper,
+                        start_pos.x,
+                        y,
+                        line_text,
+                        line_spans,
+                        font_size,
+                    );
                 }
             }
 
@@ -696,8 +612,9 @@ pub fn show(app: &mut RustpadApp, ctx: &egui::Context) {
                         .buffer
                         .line(cursor_line)
                         .unwrap_or_default();
+                    let layout = column_mapper.measure_line(line_text);
                     let cursor_x =
-                        column_mapper.col_to_x(start_pos.x, line_text, cursor_col);
+                        column_mapper.col_to_x(start_pos.x, &layout, cursor_col);
 
                     let time = ctx.input(|i| i.time);
                     let visible = (time * 2.0) as i32 % 2 == 0;
@@ -770,6 +687,46 @@ fn line_y_in_viewport(y: f32, viewport_top: f32, viewport_height: f32, line_heig
     rel >= -line_height && rel <= viewport_height
 }
 
+/// Paint syntax-highlighted text one glyph at a time using shared caret layout.
+fn draw_highlighted_line_chars(
+    painter: &egui::Painter,
+    mapper: &ColumnMapper<'_>,
+    start_x: f32,
+    y: f32,
+    line_text: &str,
+    spans: &[(syntect::highlighting::Style, String)],
+    font_size: f32,
+) {
+    let layout = mapper.measure_line(line_text);
+    let font = egui::FontId::monospace(font_size);
+    let opts = mapper.display_opts();
+    let mut char_idx = 0usize;
+    for (style, text_segment) in spans {
+        let color = Color32::from_rgb(
+            style.foreground.r,
+            style.foreground.g,
+            style.foreground.b,
+        );
+        for ch in text_segment.chars() {
+            let mut display = ch.to_string();
+            if opts.display_blank || opts.show_tabs_as_spaces {
+                display = context_actions::visualize_whitespace(
+                    &display,
+                    opts.display_blank,
+                    opts.show_tabs_as_spaces,
+                );
+            }
+            if opts.display_non_print {
+                display = context_actions::visualize_non_prints(&display);
+            }
+            let x = layout.col_to_x(start_x, char_idx);
+            let galley = painter.layout_no_wrap(display, font.clone(), color);
+            painter.galley(egui::pos2(x, y), galley, Color32::WHITE);
+            char_idx += 1;
+        }
+    }
+}
+
 /// Foreground/syntax text color is unchanged; this only fills behind the glyphs.
 fn draw_line_mark_backgrounds(
     ctx: &LineMarkDrawCtx<'_>,
@@ -800,8 +757,9 @@ fn draw_line_mark_backgrounds(
             continue;
         }
         let line_text = buffer.line(line).unwrap_or_default();
-        let x1 = ctx.mapper.col_to_x(start_x, line_text, sel_start_col);
-        let x2 = ctx.mapper.col_to_x(start_x, line_text, sel_end_col);
+        let layout = ctx.mapper.measure_line(line_text);
+        let x1 = ctx.mapper.col_to_x(start_x, &layout, sel_start_col);
+        let x2 = ctx.mapper.col_to_x(start_x, &layout, sel_end_col);
         let (r, g, b) = mark_line_color(mark.color);
         painter.rect_filled(
             egui::Rect::from_min_max(
@@ -1331,10 +1289,9 @@ fn draw_search_match_highlights(ctx: &SearchHighlightCtx<'_>) {
             } else {
                 ctx.app.tab_manager.active().buffer.line_len(line_idx)
             };
-            let x1 = ctx
-                .mapper
-                .col_to_x(ctx.start_pos.x, line_text, col_start);
-            let x2 = ctx.mapper.col_to_x(ctx.start_pos.x, line_text, col_end);
+            let layout = ctx.mapper.measure_line(line_text);
+            let x1 = ctx.mapper.col_to_x(ctx.start_pos.x, &layout, col_start);
+            let x2 = ctx.mapper.col_to_x(ctx.start_pos.x, &layout, col_end);
             painter.rect_filled(
                 egui::Rect::from_min_max(
                     egui::pos2(x1, y),

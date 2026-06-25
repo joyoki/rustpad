@@ -405,6 +405,16 @@ mod tests {
     }
 
     #[test]
+    fn test_selection_single_character_slice() {
+        use crate::editor::{LineEnding, TextBuffer};
+        let buffer = TextBuffer::from_text("hello".to_string(), LineEnding::Lf);
+        let sel = Selection::new(Cursor::new(0, 1), Cursor::new(0, 2));
+        assert!(!sel.is_empty());
+        let (start, end) = sel.to_byte_range(&buffer);
+        assert_eq!(buffer.slice(start, end), "e");
+    }
+
+    #[test]
     fn test_selection_normalize() {
         let s = Selection::new(Cursor::new(5, 10), Cursor::new(2, 3));
         let norm = s.normalized();

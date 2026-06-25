@@ -126,7 +126,7 @@ pub fn show(app: &mut RustpadApp, ctx: &egui::Context) {
         let show_tabs_as_spaces = app.config.editor.show_tabs_as_spaces;
         let line_marks = app.tab_manager.active().editor_extras.line_marks.clone();
 
-        let editor_theme = app.theme_manager.current_theme();
+        let editor_theme = app.theme_manager.current_theme().clone();
         let bg_color = editor_theme.background_color();
         let current_line_bg = editor_theme.current_line_bg_color();
         let selection_bg = editor_theme.selection_bg_color();
@@ -372,7 +372,7 @@ pub fn show(app: &mut RustpadApp, ctx: &egui::Context) {
             let max_scroll =
                 scroll_bar::max_scroll_offset(visible_line_total, line_height, available_height);
 
-            if response.hovered() || has_focus {
+            if response.hovered() {
                 let scroll_delta = ui.input(|i| {
                     if i.smooth_scroll_delta.y != 0.0 {
                         i.smooth_scroll_delta.y
@@ -503,83 +503,28 @@ pub fn show(app: &mut RustpadApp, ctx: &egui::Context) {
                 }
             }
 
-            // Highlight every search match while the Find dialog is open so the
-            // user gets clear feedback that search is working (Notepad-- style).
-            if app.show_search && !app.search_engine.results().is_empty() {
-                let match_bg = Color32::from_rgba_unmultiplied(255, 213, 0, 90);
-                let current_idx = app.search_engine.current_index();
-                let results: Vec<crate::search::SearchMatch> =
-                    app.search_engine.results().to_vec();
-                for (mi, m) in results.iter().enumerate() {
-                    let (s_line, s_col) =
-                        app.tab_manager.active().buffer.line_col_for_char_pos(m.start);
-                    let (e_line, e_col) =
-                        app.tab_manager.active().buffer.line_col_for_char_pos(m.end);
-                    for line_idx in s_line..=e_line {
-                        if fold_state.is_line_hidden(line_idx) {
-                            continue;
-                        }
-                        let Some(vis) = fold_state.visible_line_index(line_idx) else {
-                            continue;
-                        };
-                        if vis < first_visible_display
-                            || vis >= first_visible_display + visible_lines_on_screen
-                        {
-                            continue;
-                        }
-                        let y = FoldState::visible_line_y(
-                            start_pos.y,
-                            vis,
-                            line_height,
-                            current_scroll,
-                        );
-                        let line_text = app
-                            .tab_manager
-                            .active()
-                            .buffer
-                            .line(line_idx)
-                            .unwrap_or_default();
-                        let col_start = if line_idx == s_line { s_col } else { 0 };
-                        let col_end = if line_idx == e_line {
-                            e_col
-                        } else {
-                            app.tab_manager.active().buffer.line_len(line_idx)
-                        };
-                        let x1 = col_to_x(
-                            painter,
-                            start_pos.x,
-                            line_text,
-                            col_start,
-                            font_size,
-                            display_blank,
-                            show_tabs_as_spaces,
-                            display_non_print,
-                        );
-                        let x2 = col_to_x(
-                            painter,
-                            start_pos.x,
-                            line_text,
-                            col_end,
-                            font_size,
-                            display_blank,
-                            show_tabs_as_spaces,
-                            display_non_print,
-                        );
-                        let color = if Some(mi) == current_idx {
-                            Color32::from_rgba_unmultiplied(255, 165, 0, 140)
-                        } else {
-                            match_bg
-                        };
-                        painter.rect_filled(
-                            egui::Rect::from_min_max(
-                                egui::pos2(x1, y),
-                                egui::pos2(x2.max(x1 + 1.0), y + line_height),
-                            ),
-                            0.0,
-                            color,
-                        );
-                    }
-                }
+            // Search match backgrounds (under text, Notepad++ style).
+            if crate::ui::search_highlight::should_paint_editor_highlights(
+                app.show_search,
+                app.show_search_results,
+                app.search_pattern.is_empty(),
+                app.search_engine.results().len(),
+            ) {
+                draw_search_match_highlights(
+                    painter,
+                    app,
+                    &fold_state,
+                    start_pos,
+                    first_visible_display,
+                    visible_lines_on_screen,
+                    line_height,
+                    current_scroll,
+                    font_size,
+                    display_blank,
+                    show_tabs_as_spaces,
+                    display_non_print,
+                    &editor_theme,
+                );
             }
 
             // Draw text lines with syntax highlighting (color marks = background only).
@@ -1283,6 +1228,99 @@ fn display_line_text(
         display = context_actions::visualize_non_prints(&display);
     }
     display
+}
+
+fn draw_search_match_highlights(
+    painter: &egui::Painter,
+    app: &RustpadApp,
+    fold_state: &FoldState,
+    start_pos: egui::Pos2,
+    first_visible_display: usize,
+    visible_lines_on_screen: usize,
+    line_height: f32,
+    current_scroll: f32,
+    font_size: f32,
+    display_blank: bool,
+    show_tabs_as_spaces: bool,
+    display_non_print: bool,
+    theme: &crate::config::theme::EditorTheme,
+) {
+    let match_bg = theme.search_highlight_bg_color();
+    let current_bg = theme.search_current_highlight_bg_color();
+    let current_idx = app.search_engine.current_index();
+    let results: Vec<crate::search::SearchMatch> = app.search_engine.results().to_vec();
+
+    for (mi, m) in results.iter().enumerate() {
+        let (s_line, s_col) = app
+            .tab_manager
+            .active()
+            .buffer
+            .line_col_for_char_pos(m.start);
+        let (e_line, e_col) = app
+            .tab_manager
+            .active()
+            .buffer
+            .line_col_for_char_pos(m.end);
+        let color = if Some(mi) == current_idx {
+            current_bg
+        } else {
+            match_bg
+        };
+
+        for line_idx in s_line..=e_line {
+            if fold_state.is_line_hidden(line_idx) {
+                continue;
+            }
+            let Some(vis) = fold_state.visible_line_index(line_idx) else {
+                continue;
+            };
+            if vis < first_visible_display || vis >= first_visible_display + visible_lines_on_screen
+            {
+                continue;
+            }
+            let y = FoldState::visible_line_y(start_pos.y, vis, line_height, current_scroll);
+            let line_text = app
+                .tab_manager
+                .active()
+                .buffer
+                .line(line_idx)
+                .unwrap_or_default();
+            let col_start = if line_idx == s_line { s_col } else { 0 };
+            let col_end = if line_idx == e_line {
+                e_col
+            } else {
+                app.tab_manager.active().buffer.line_len(line_idx)
+            };
+            let x1 = col_to_x(
+                painter,
+                start_pos.x,
+                line_text,
+                col_start,
+                font_size,
+                display_blank,
+                show_tabs_as_spaces,
+                display_non_print,
+            );
+            let x2 = col_to_x(
+                painter,
+                start_pos.x,
+                line_text,
+                col_end,
+                font_size,
+                display_blank,
+                show_tabs_as_spaces,
+                display_non_print,
+            );
+            painter.rect_filled(
+                egui::Rect::from_min_max(
+                    egui::pos2(x1, y),
+                    egui::pos2(x2.max(x1 + 1.0), y + line_height),
+                ),
+                0.0,
+                color,
+            );
+        }
+    }
 }
 
 fn col_to_x(

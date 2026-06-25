@@ -128,6 +128,31 @@ impl FileTree {
     pub fn select(&mut self, path: PathBuf) {
         self.selected = Some(path);
     }
+
+    /// Expand ancestor folders so `path` is visible in the tree.
+    pub fn reveal_path(&mut self, path: &PathBuf) {
+        if let Some(ref mut root) = self.root {
+            Self::expand_to_path(root, path);
+        }
+        self.selected = Some(path.clone());
+    }
+
+    fn expand_to_path(node: &mut FileTreeNode, target: &PathBuf) -> bool {
+        if node.path == *target {
+            return true;
+        }
+        for child in &mut node.children {
+            if target.starts_with(&child.path) {
+                if child.is_dir() {
+                    child.expanded = true;
+                }
+                if Self::expand_to_path(child, target) {
+                    return true;
+                }
+            }
+        }
+        false
+    }
 }
 
 impl Default for FileTree {
@@ -162,8 +187,7 @@ pub fn show(app: &mut crate::app::RustpadApp, ctx: &egui::Context) {
                 ui.label("No workspace open");
                 if ui.button("Open Folder...").clicked() {
                     if let Some(path) = rfd::FileDialog::new().pick_folder() {
-                        app.file_tree.load(&path);
-                        app.workspace_root = Some(path);
+                        app.open_workspace_folder(path);
                     }
                 }
             }

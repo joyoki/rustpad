@@ -1,37 +1,48 @@
 use eframe::egui;
 
-use crate::app::{RustpadApp, SearchDialogTab};
+use crate::app::{RustpadApp, SearchDialogTab, SearchResultItem};
 use crate::i18n::{self, UiLanguage};
 
-/// Dockable "Search results" panel that lists every match with its line number
-/// and lets the user click a row to jump to it (Notepad++ style).
+/// Dockable "Search results" panel — accumulates every "Find All" session (Notepad++ style).
 pub fn show_results_panel(app: &mut RustpadApp, ctx: &egui::Context) {
     if !app.show_search_results {
         return;
     }
 
     let mut close = false;
-    let mut jump_target: Option<usize> = None;
+    let mut jump_target: Option<(usize, usize)> = None;
+    let mut toggle_batch: Option<usize> = None;
+    let mut toggle_doc: Option<(usize, String)> = None;
+    let mut collapse_all = false;
+    let mut expand_all = false;
 
     let t = app.tr();
     let lang = app.config.ui.ui_language.clone();
+    let batch_count = app.search_result_batches.len();
+    let total_matches = app.search_result_total_matches();
 
     egui::TopBottomPanel::bottom("search_results_panel")
         .resizable(true)
         .default_height(180.0)
         .min_height(80.0)
         .show(ctx, |ui| {
+            let scroll_id = ui.id().with("search_results_scroll_y");
+            let mut scroll_y = ui.data(|d| d.get_temp::<f32>(scroll_id)).unwrap_or(0.0);
+
             ui.horizontal(|ui| {
                 ui.strong(t.search_results);
                 ui.label(
-                    egui::RichText::new(i18n::matches_count(&lang, app.search_result_items.len()))
+                    egui::RichText::new(i18n::matches_count(&lang, total_matches))
                         .color(egui::Color32::from_gray(120)),
                 );
-                if !app.search_pattern.is_empty() {
+                if batch_count > 1 {
+                    let sessions_lbl = if UiLanguage::parse(&lang) == UiLanguage::Zh {
+                        format!("{batch_count} 次搜索")
+                    } else {
+                        format!("{batch_count} searches")
+                    };
                     ui.label(
-                        egui::RichText::new(i18n::search_for(&lang, &app.search_pattern))
-                            .italics()
-                            .color(egui::Color32::from_gray(120)),
+                        egui::RichText::new(sessions_lbl).color(egui::Color32::from_gray(120)),
                     );
                 }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -39,68 +50,342 @@ pub fn show_results_panel(app: &mut RustpadApp, ctx: &egui::Context) {
                         close = true;
                     }
                     if ui.button(t.btn_clear).clicked() {
-                        app.search_result_items.clear();
+                        app.search_result_batches.clear();
+                        app.active_result_batch_id = None;
+                        scroll_y = 0.0;
                     }
                 });
             });
             ui.separator();
 
-            if app.search_result_items.is_empty() {
+            if app.search_result_batches.is_empty() {
                 ui.weak(t.no_search_results);
+                ui.data_mut(|d| d.insert_temp(scroll_id, scroll_y));
                 return;
             }
 
-            // Width reserved for the line-number gutter so previews line up.
             let line_no_width = 64.0;
-            let current = app.search_engine.current_index();
-            let multi_doc = app
-                .search_result_items
-                .iter()
-                .any(|i| i.doc != app.search_result_items[0].doc);
+            let has_file_groups = app.search_result_batches.iter().any(|batch| {
+                batch.items.first().is_some_and(|first| {
+                    batch.items.iter().any(|i| i.doc != first.doc)
+                })
+            });
 
-            egui::ScrollArea::vertical()
+            if has_file_groups || batch_count > 1 {
+                ui.horizontal(|ui| {
+                    let (expand_lbl, collapse_lbl) =
+                        if UiLanguage::parse(&lang) == UiLanguage::Zh {
+                            ("全部展开", "全部折叠")
+                        } else {
+                            ("Expand All", "Collapse All")
+                        };
+                    if ui.small_button(expand_lbl).clicked() {
+                        expand_all = true;
+                    }
+                    if ui.small_button(collapse_lbl).clicked() {
+                        collapse_all = true;
+                    }
+                });
+            }
+
+            let scroll = egui::ScrollArea::vertical()
+                .id_salt("search_results_list")
                 .auto_shrink([false, false])
+                .drag_to_scroll(false)
+                .animated(false)
+                .vertical_scroll_offset(scroll_y)
                 .show(ui, |ui| {
-                    let mut last_doc: Option<String> = None;
-                    for (idx, item) in app.search_result_items.iter().enumerate() {
-                        // Group header per document when searching multiple files.
-                        if multi_doc && last_doc.as_deref() != Some(item.doc.as_str()) {
-                            ui.add_space(2.0);
-                            ui.label(
-                                egui::RichText::new(format!("▸ {}", item.doc))
-                                    .strong()
-                                    .color(egui::Color32::from_rgb(80, 120, 200)),
+                    let batch_ids: Vec<usize> =
+                        app.search_result_batches.iter().map(|b| b.id).collect();
+                    for batch_id in batch_ids {
+                        let Some(batch) = app
+                            .search_result_batches
+                            .iter()
+                            .find(|b| b.id == batch_id)
+                        else {
+                            continue;
+                        };
+                        let batch_icon = if batch.collapsed { "▶" } else { "▼" };
+                        let batch_header = format!(
+                            "{} \"{}\" — {} ({})",
+                            batch_icon,
+                            batch.pattern,
+                            batch.scope_label,
+                            batch.items.len()
+                        );
+                        let batch_response = ui
+                            .add(
+                                egui::Label::new(
+                                    egui::RichText::new(batch_header)
+                                        .strong()
+                                        .color(egui::Color32::from_rgb(60, 100, 160)),
+                                )
+                                .sense(egui::Sense::click()),
+                            )
+                            .on_hover_text(
+                                if UiLanguage::parse(&lang) == UiLanguage::Zh {
+                                    "点击折叠/展开此搜索"
+                                } else {
+                                    "Click to expand/collapse this search"
+                                },
                             );
-                            last_doc = Some(item.doc.clone());
+                        if batch_response.clicked() {
+                            toggle_batch = Some(batch_id);
                         }
 
-                        let is_current = current == Some(idx)
-                            && item.tab == app.tab_manager.active_index();
-                        ui.horizontal(|ui| {
-                            ui.add_sized(
-                                [line_no_width, ui.available_height()],
-                                egui::Label::new(
-                                    egui::RichText::new(i18n::line_label(&lang, item.line + 1))
-                                        .monospace()
-                                        .color(egui::Color32::from_rgb(120, 140, 160)),
-                                ),
-                            );
-                            let label = egui::RichText::new(&item.preview).monospace();
-                            let label = if is_current { label.strong() } else { label };
-                            if ui.selectable_label(is_current, label).clicked() {
-                                jump_target = Some(idx);
+                        if batch.collapsed {
+                            continue;
+                        }
+
+                        let multi_doc = batch.items.first().is_some_and(|first| {
+                            batch.items.iter().any(|i| i.doc != first.doc)
+                        });
+
+                        let mut doc_groups: Vec<(String, Vec<usize>)> = Vec::new();
+                        for (item_idx, item) in batch.items.iter().enumerate() {
+                            if let Some((doc, entries)) = doc_groups.last_mut() {
+                                if *doc == item.doc {
+                                    entries.push(item_idx);
+                                    continue;
+                                }
+                            }
+                            doc_groups.push((item.doc.clone(), vec![item_idx]));
+                        }
+
+                        ui.indent(ui.id().with(("search_batch", batch_id)), |ui| {
+                            for (doc, entries) in doc_groups {
+                                if multi_doc {
+                                    let expanded =
+                                        !batch.collapsed_docs.contains(&doc);
+                                    let icon = if expanded { "▼" } else { "▶" };
+                                    let header =
+                                        format!("{} {} ({})", icon, doc, entries.len());
+                                    let header_response = ui
+                                        .add(
+                                            egui::Label::new(
+                                                egui::RichText::new(header).strong().color(
+                                                    egui::Color32::from_rgb(80, 120, 200),
+                                                ),
+                                            )
+                                            .sense(egui::Sense::click()),
+                                        )
+                                        .on_hover_text(
+                                            if UiLanguage::parse(&lang) == UiLanguage::Zh {
+                                                "点击折叠/展开"
+                                            } else {
+                                                "Click to expand/collapse"
+                                            },
+                                        );
+                                    if header_response.clicked() {
+                                        toggle_doc = Some((batch_id, doc.clone()));
+                                    }
+                                    if !expanded {
+                                        continue;
+                                    }
+                                    ui.indent(
+                                        ui.id().with(("search_doc", batch_id, &doc)),
+                                        |ui| {
+                                            for item_idx in entries {
+                                                if let Some(item) =
+                                                    batch.items.get(item_idx)
+                                                {
+                                                    paint_search_result_row(
+                                                        ui,
+                                                        app,
+                                                        batch_id,
+                                                        item_idx,
+                                                        item,
+                                                        line_no_width,
+                                                        &lang,
+                                                        &mut jump_target,
+                                                    );
+                                                }
+                                            }
+                                        },
+                                    );
+                                } else {
+                                    for item_idx in entries {
+                                        if let Some(item) = batch.items.get(item_idx) {
+                                            paint_search_result_row(
+                                                ui,
+                                                app,
+                                                batch_id,
+                                                item_idx,
+                                                item,
+                                                line_no_width,
+                                                &lang,
+                                                &mut jump_target,
+                                            );
+                                        }
+                                    }
+                                }
                             }
                         });
                     }
                 });
+
+            scroll_y = scroll.state.offset.y;
+
+            // Mouse wheels often emit raw_scroll_delta; egui ScrollArea only reads smooth delta.
+            let pointer = ui.input(|i| i.pointer.hover_pos());
+            if pointer.is_some_and(|p| scroll.inner_rect.contains(p)) {
+                let raw = ui.input(|i| i.raw_scroll_delta.y);
+                if raw != 0.0 {
+                    let max_y = (scroll.content_size.y - scroll.inner_rect.height()).max(0.0);
+                    scroll_y = (scroll_y - raw).clamp(0.0, max_y);
+                    ui.ctx().input_mut(|i| i.raw_scroll_delta.y = 0.0);
+                }
+            }
+
+            ui.data_mut(|d| d.insert_temp(scroll_id, scroll_y));
+
+            // Keep wheel events in the results panel when the pointer is over it.
+            if pointer.is_some_and(|p| scroll.inner_rect.contains(p)) {
+                let has_wheel = ui.input(|i| {
+                    i.smooth_scroll_delta.y != 0.0 || i.raw_scroll_delta.y != 0.0
+                });
+                if has_wheel {
+                    crate::ui::scroll_bar::consume_editor_wheel(ctx, true);
+                }
+            }
         });
 
-    if let Some(idx) = jump_target {
-        app.jump_to_result_item(idx);
+    if expand_all {
+        for batch in &mut app.search_result_batches {
+            batch.collapsed = false;
+            batch.collapsed_docs.clear();
+        }
+    }
+    if collapse_all {
+        for batch in &mut app.search_result_batches {
+            batch.collapsed = false;
+            batch.collapsed_docs = batch
+                .items
+                .iter()
+                .map(|i| i.doc.clone())
+                .collect();
+        }
+    }
+    if let Some(batch_id) = toggle_batch {
+        if let Some(batch) = app
+            .search_result_batches
+            .iter_mut()
+            .find(|b| b.id == batch_id)
+        {
+            batch.collapsed = !batch.collapsed;
+        }
+    }
+    if let Some((batch_id, doc)) = toggle_doc {
+        if let Some(batch) = app
+            .search_result_batches
+            .iter_mut()
+            .find(|b| b.id == batch_id)
+        {
+            if batch.collapsed_docs.contains(&doc) {
+                batch.collapsed_docs.remove(&doc);
+            } else {
+                batch.collapsed_docs.insert(doc);
+            }
+        }
+    }
+
+    if let Some((batch_id, item_idx)) = jump_target {
+        app.jump_to_batch_item(batch_id, item_idx);
+        ctx.request_repaint();
     }
     if close {
         app.show_search_results = false;
     }
+}
+
+fn paint_search_result_row(
+    ui: &mut egui::Ui,
+    app: &RustpadApp,
+    batch_id: usize,
+    item_idx: usize,
+    item: &SearchResultItem,
+    line_no_width: f32,
+    lang: &str,
+    jump_target: &mut Option<(usize, usize)>,
+) {
+    let is_current = result_item_is_current(app, batch_id, item);
+    let match_len = item.end.saturating_sub(item.start);
+    let theme = app.theme_manager.current_theme().clone();
+    let row_width = ui.available_width();
+    let row_height = ui.spacing().interact_size.y;
+    let (row_rect, row_response) =
+        ui.allocate_exact_size(egui::vec2(row_width, row_height), egui::Sense::click());
+
+    if ui.is_rect_visible(row_rect) {
+        let painter = ui.painter().with_clip_rect(ui.clip_rect());
+        if is_current {
+            painter.rect_filled(
+                row_rect,
+                0.0,
+                theme.search_highlight_bg_color().gamma_multiply(0.35),
+            );
+        } else if row_response.hovered() {
+            painter.rect_filled(
+                row_rect,
+                0.0,
+                ui.visuals().widgets.hovered.weak_bg_fill,
+            );
+        }
+
+        let line_label = i18n::line_label(lang, item.line + 1);
+        let line_font = egui::TextStyle::Monospace.resolve(ui.style());
+        let line_galley = ui.fonts(|f| {
+            f.layout_no_wrap(
+                line_label,
+                line_font,
+                egui::Color32::from_rgb(120, 140, 160),
+            )
+        });
+        let line_y = row_rect.center().y - line_galley.size().y * 0.5;
+        painter.galley(
+            egui::pos2(row_rect.min.x, line_y),
+            line_galley,
+            egui::Color32::from_rgb(120, 140, 160),
+        );
+
+        let preview_rect = egui::Rect::from_min_max(
+            egui::pos2(row_rect.min.x + line_no_width, row_rect.min.y),
+            row_rect.max,
+        );
+        crate::ui::search_highlight::paint_result_preview_painter(
+            ui,
+            preview_rect,
+            &item.preview,
+            item.col,
+            match_len,
+            is_current,
+            &theme,
+        );
+    }
+
+    if row_response.double_clicked() || row_response.clicked() {
+        *jump_target = Some((batch_id, item_idx));
+    }
+}
+
+fn result_item_is_current(
+    app: &RustpadApp,
+    batch_id: usize,
+    item: &SearchResultItem,
+) -> bool {
+    if app.active_result_batch_id != Some(batch_id) {
+        return false;
+    }
+    if item.tab != app.tab_manager.active_index() {
+        return false;
+    }
+    let Some(ci) = app.search_engine.current_index() else {
+        return false;
+    };
+    app.search_engine
+        .results()
+        .get(ci)
+        .is_some_and(|m| m.start == item.start && m.line == item.line)
 }
 
 /// Floating find/replace dialog (Notepad-- style).
@@ -285,11 +570,17 @@ pub fn show(app: &mut RustpadApp, ctx: &egui::Context) {
 
                     if !app.search_status_message.is_empty() {
                         ui.add_space(6.0);
-                        ui.label(
-                            egui::RichText::new(&app.search_status_message)
-                                .italics()
-                                .color(egui::Color32::from_gray(100)),
-                        );
+                        let theme = app.theme_manager.current_theme();
+                        let status_color = if app.search_engine.results().is_empty() {
+                            egui::Color32::from_gray(100)
+                        } else {
+                            theme.search_highlight_bg_color()
+                        };
+                        let status_text = egui::RichText::new(&app.search_status_message)
+                            .italics()
+                            .background_color(status_color)
+                            .color(egui::Color32::BLACK);
+                        ui.label(status_text);
                     }
                 });
 

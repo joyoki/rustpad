@@ -64,7 +64,7 @@ fn show_file_explorer(app: &mut RustpadApp, ui: &mut egui::Ui) {
     // Open folder button
     if ui.button("Open Folder...").clicked() {
         if let Some(path) = rfd::FileDialog::new().pick_folder() {
-            app.workspace_root = Some(path);
+            app.open_workspace_folder(path);
         }
     }
 

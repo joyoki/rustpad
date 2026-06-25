@@ -70,6 +70,16 @@ impl EditorTheme {
     pub fn diff_replace_color(&self) -> egui::Color32 {
         Self::to_color32(self.diff_replace_bg)
     }
+
+    pub fn search_highlight_bg_color(&self) -> egui::Color32 {
+        Self::to_color32(self.search_highlight_bg)
+    }
+
+    /// Brighter highlight for the active search match (Notepad++ style).
+    pub fn search_current_highlight_bg_color(&self) -> egui::Color32 {
+        let [r, g, b, _] = self.search_highlight_bg;
+        Self::to_color32([r, g.saturating_sub(20), b, 240])
+    }
 }
 
 /// Built-in dark theme (default).
@@ -96,7 +106,7 @@ pub fn dark_theme() -> EditorTheme {
         diff_insert_bg: [228, 255, 228, 255],
         diff_delete_bg: [255, 228, 228, 255],
         diff_replace_bg: [255, 251, 228, 255],
-        search_highlight_bg: [255, 255, 0, 128],
+        search_highlight_bg: [255, 255, 0, 200],
         minimap_bg: [30, 30, 30, 255],
         scroll_bar_bg: [30, 30, 30, 255],
         scroll_bar_fg: [121, 121, 121, 255],
@@ -127,7 +137,7 @@ pub fn light_theme() -> EditorTheme {
         diff_insert_bg: [228, 255, 228, 255],
         diff_delete_bg: [255, 228, 228, 255],
         diff_replace_bg: [255, 251, 200, 255],
-        search_highlight_bg: [255, 255, 0, 128],
+        search_highlight_bg: [255, 255, 0, 200],
         minimap_bg: [245, 245, 245, 255],
         scroll_bar_bg: [245, 245, 245, 255],
         scroll_bar_fg: [180, 180, 180, 255],
@@ -158,7 +168,7 @@ pub fn monokai_theme() -> EditorTheme {
         diff_insert_bg: [166, 226, 46, 60],
         diff_delete_bg: [249, 38, 114, 60],
         diff_replace_bg: [253, 151, 31, 60],
-        search_highlight_bg: [253, 151, 31, 128],
+        search_highlight_bg: [253, 151, 31, 200],
         minimap_bg: [39, 40, 34, 255],
         scroll_bar_bg: [39, 40, 34, 255],
         scroll_bar_fg: [73, 72, 62, 255],
@@ -189,7 +199,7 @@ pub fn solarized_dark_theme() -> EditorTheme {
         diff_insert_bg: [133, 153, 0, 60],
         diff_delete_bg: [220, 50, 47, 60],
         diff_replace_bg: [181, 137, 0, 60],
-        search_highlight_bg: [181, 137, 0, 128],
+        search_highlight_bg: [181, 137, 0, 200],
         minimap_bg: [0, 43, 54, 255],
         scroll_bar_bg: [0, 43, 54, 255],
         scroll_bar_fg: [7, 54, 66, 255],

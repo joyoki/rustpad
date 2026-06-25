@@ -15,11 +15,13 @@ pub mod menu;
 pub mod menu_actions;
 pub mod minimap;
 pub mod scroll_bar;
+pub mod search_highlight;
 pub mod search_panel;
 pub mod sidebar;
 pub mod split_view;
 pub mod status_bar;
 pub mod tab_bar;
+pub mod tab_context_menu;
 pub mod toolbar;
 
 #[cfg(test)]

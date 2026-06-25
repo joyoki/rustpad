@@ -8,6 +8,7 @@ use crate::i18n::{self, UiLanguage};
 /// Show non-blocking dialogs (preferences, about, goto line).
 pub fn show_non_blocking(app: &mut RustpadApp, ctx: &egui::Context) {
     show_goto_line_dialog(app, ctx);
+    show_rename_tab_dialog(app, ctx);
     show_batch_encoding_dialog(app, ctx);
     crate::ui::keybindings_dialog::show(app, ctx);
     show_about_dialog(app, ctx);
@@ -56,6 +57,51 @@ fn show_goto_line_dialog(app: &mut RustpadApp, ctx: &egui::Context) {
             });
         });
     app.show_goto_line = open;
+}
+
+fn show_rename_tab_dialog(app: &mut RustpadApp, ctx: &egui::Context) {
+    if !app.show_rename_tab {
+        return;
+    }
+
+    let lang = app.config.ui.ui_language.clone();
+    let title = if UiLanguage::parse(&lang) == UiLanguage::Zh {
+        "重命名当前文件"
+    } else {
+        "Rename File"
+    };
+    let label = if UiLanguage::parse(&lang) == UiLanguage::Zh {
+        "新文件名："
+    } else {
+        "New file name:"
+    };
+
+    let mut open = app.show_rename_tab;
+    egui::Window::new(title)
+        .collapsible(false)
+        .resizable(false)
+        .open(&mut open)
+        .show(ctx, |ui| {
+            ui.label(label);
+            let response = ui.text_edit_singleline(&mut app.rename_tab_text);
+            ui.horizontal(|ui| {
+                if ui.button(app.tr().btn_save).clicked()
+                    || (response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)))
+                {
+                    if app.commit_rename_tab() {
+                        app.show_rename_tab = false;
+                        app.rename_tab_index = None;
+                        app.rename_tab_text.clear();
+                    }
+                }
+                if ui.button(app.tr().btn_cancel).clicked() {
+                    app.show_rename_tab = false;
+                    app.rename_tab_index = None;
+                    app.rename_tab_text.clear();
+                }
+            });
+        });
+    app.show_rename_tab = open;
 }
 
 fn show_batch_encoding_dialog(app: &mut RustpadApp, ctx: &egui::Context) {
@@ -313,32 +359,43 @@ pub fn show_unsaved_dialog(app: &mut RustpadApp, ctx: &egui::Context) {
             ui.horizontal(|ui| {
                 if ui.button(t.btn_save).clicked() {
                     if let Some(idx) = app.pending_close_tab {
-                        let needs_save_as = app.tab_manager.tabs()[idx].file_path.is_none();
-                        if needs_save_as {
-                            app.tab_manager.set_active(idx);
-                            app.save_as_dialog();
-                        } else {
-                            let _ = app.tab_manager.tabs_mut()[idx].save();
-                        }
-                        if !app.tab_manager.tabs()[idx].buffer.is_dirty()
-                            && !app.tab_manager.tabs()[idx].modified
-                        {
-                            app.tab_manager.close_tab(idx);
-                            app.pending_close_tab = None;
-                            app.show_unsaved_dialog = false;
+                        if let Some(tab) = app.tab_manager.tabs().get(idx) {
+                            let needs_save_as = tab.file_path.is_none();
+                            if needs_save_as {
+                                app.tab_manager.set_active(idx);
+                                app.save_as_dialog();
+                            } else {
+                                let _ = app.tab_manager.tabs_mut()[idx].save();
+                            }
+                            if let Some(tab) = app.tab_manager.tabs().get(idx) {
+                                if !tab.buffer.is_dirty() && !tab.modified {
+                                    if app.tab_manager.close_tab(idx) {
+                                        app.highlighter.clear_cache();
+                                        app.highlighter.invalidate_all();
+                                        app.finish_pending_tab_close(idx);
+                                    } else {
+                                        app.cancel_pending_tab_close();
+                                    }
+                                }
+                            }
                         }
                     }
                 }
                 if ui.button(t.btn_dont_save).clicked() {
                     if let Some(idx) = app.pending_close_tab {
-                        app.tab_manager.close_tab(idx);
+                        if app.tab_manager.close_tab(idx) {
+                            app.highlighter.clear_cache();
+                            app.highlighter.invalidate_all();
+                            app.finish_pending_tab_close(idx);
+                        } else {
+                            app.cancel_pending_tab_close();
+                        }
+                    } else {
+                        app.cancel_pending_tab_close();
                     }
-                    app.pending_close_tab = None;
-                    app.show_unsaved_dialog = false;
                 }
                 if ui.button(t.btn_cancel).clicked() {
-                    app.pending_close_tab = None;
-                    app.show_unsaved_dialog = false;
+                    app.cancel_pending_tab_close();
                 }
             });
         });

@@ -45,7 +45,8 @@ fn main() -> eframe::Result {
             .with_inner_size([1280.0, 720.0])
             .with_min_inner_size([800.0, 600.0])
             .with_title("RustPad")
-            .with_icon(branding::load_window_icon()),
+            .with_icon(branding::load_window_icon())
+            .with_drag_and_drop(true),
         renderer: eframe::Renderer::Glow,
         ..Default::default()
     };

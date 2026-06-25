@@ -1,4 +1,5 @@
 use eframe::egui;
+use std::collections::HashSet;
 use std::path::PathBuf;
 
 use crate::config::AppConfig;
@@ -33,6 +34,17 @@ pub struct SearchResultItem {
     pub end: usize,
     /// The full text of the line the match is on (for preview).
     pub preview: String,
+}
+
+/// One committed "Find All" session kept in the results panel for later review.
+#[derive(Debug, Clone)]
+pub struct SearchResultBatch {
+    pub id: usize,
+    pub pattern: String,
+    pub scope_label: String,
+    pub items: Vec<SearchResultItem>,
+    pub collapsed: bool,
+    pub collapsed_docs: HashSet<String>,
 }
 use crate::session::{AutoSaveManager, Session};
 use crate::ui::diff_navigator::DiffNavigator;
@@ -72,6 +84,14 @@ pub struct StatusBar {
     pub line_ending: String,
     pub language: String,
     pub cursor_position: String,
+}
+
+/// Batch tab-close operation resumed after each unsaved prompt.
+#[derive(Debug, Clone, Copy)]
+pub enum TabCloseBatch {
+    Others { keep: usize },
+    LeftOf { from: usize },
+    RightOf { from: usize },
 }
 
 /// Top-level application state.
@@ -119,8 +139,11 @@ pub struct RustpadApp {
     pub search_focus_replace: bool,
     pub search_panel_text: String,
     pub search_results: Vec<(PathBuf, usize, String)>,
-    /// Flat list of every match for the "Search results" panel (with line info).
-    pub search_result_items: Vec<SearchResultItem>,
+    /// Committed find-all sessions (newest first); accumulates across searches.
+    pub search_result_batches: Vec<SearchResultBatch>,
+    pub next_search_batch_id: usize,
+    /// Batch whose match is currently highlighted in the editor.
+    pub active_result_batch_id: Option<usize>,
     /// Whether the dockable "Search results" panel is visible.
     pub show_search_results: bool,
 
@@ -177,6 +200,12 @@ pub struct RustpadApp {
 
     // Unsaved dialog
     pub pending_close_tab: Option<usize>,
+    pub pending_close_batch: Option<TabCloseBatch>,
+
+    // Tab rename dialog
+    pub show_rename_tab: bool,
+    pub rename_tab_index: Option<usize>,
+    pub rename_tab_text: String,
 
     // Editor focus state
     pub editor_has_focus: bool,
@@ -323,7 +352,9 @@ impl RustpadApp {
             search_focus_replace: false,
             search_panel_text: String::new(),
             search_results: Vec::new(),
-            search_result_items: Vec::new(),
+            search_result_batches: Vec::new(),
+            next_search_batch_id: 1,
+            active_result_batch_id: None,
             show_search_results: false,
             cross_file_directory: String::new(),
             cross_file_filter: "*.rs".to_string(),
@@ -355,6 +386,10 @@ impl RustpadApp {
             keybindings_status: String::new(),
             theme_manager: ThemeManager::new(),
             pending_close_tab: None,
+            pending_close_batch: None,
+            show_rename_tab: false,
+            rename_tab_index: None,
+            rename_tab_text: String::new(),
             pending_new_tab: false,
             pending_open_file: false,
             pending_save: false,
@@ -835,6 +870,40 @@ impl RustpadApp {
         }
     }
 
+    /// Open files dragged onto the application window.
+    pub fn handle_dropped_files(&mut self, ctx: &egui::Context) {
+        let paths: Vec<PathBuf> = ctx.input(|i| {
+            i.raw.dropped_files
+                .iter()
+                .filter_map(|file| file.path.clone())
+                .collect()
+        });
+        for path in paths {
+            if path.is_dir() {
+                self.open_workspace_folder(path);
+            } else if path.is_file() {
+                self.open_file(path);
+            } else {
+                log::warn!("Ignored dropped path: {:?}", path);
+            }
+        }
+    }
+
+    /// Open a folder as the workspace (file explorer sidebar).
+    pub fn open_workspace_folder(&mut self, path: PathBuf) {
+        let path = path.canonicalize().unwrap_or(path);
+        if !path.is_dir() {
+            log::warn!("Ignored workspace path (not a directory): {:?}", path);
+            return;
+        }
+        log::info!("Opening workspace folder: {:?}", path);
+        self.workspace_root = Some(path.clone());
+        self.file_tree.load(&path);
+        self.show_sidebar = true;
+        self.sidebar_tab = SidebarTab::FileExplorer;
+        self.persist_session();
+    }
+
     /// Save the current tab.
     pub fn save_current_tab(&mut self) {
         let has_path = self.tab_manager.active().file_path.is_some();
@@ -1018,13 +1087,320 @@ impl RustpadApp {
     /// Close the current tab.
     pub fn close_current_tab(&mut self) {
         let idx = self.tab_manager.active_index();
-        let is_dirty = self.tab_manager.tabs()[idx].buffer.is_dirty()
-            || self.tab_manager.tabs()[idx].modified;
-        if is_dirty {
-            self.pending_close_tab = Some(idx);
+        self.close_tab_at(idx);
+    }
+
+    fn is_tab_dirty(&self, index: usize) -> bool {
+        self.tab_manager
+            .tabs()
+            .get(index)
+            .map(|t| t.buffer.is_dirty() || t.modified)
+            .unwrap_or(false)
+    }
+
+    /// Close a single tab by index (prompts when unsaved).
+    pub fn close_tab_at(&mut self, index: usize) {
+        if index >= self.tab_manager.tab_count() {
+            return;
+        }
+        self.pending_close_batch = None;
+        if self.is_tab_dirty(index) {
+            self.pending_close_tab = Some(index);
             self.show_unsaved_dialog = true;
-        } else if self.tab_manager.tab_count() > 1 {
-            self.tab_manager.close_tab(idx);
+        } else if self.tab_manager.close_tab(index) {
+            self.highlighter.clear_cache();
+            self.highlighter.invalidate_all();
+        }
+    }
+
+    /// Close every tab except `keep`.
+    pub fn close_other_tabs(&mut self, keep: usize) {
+        if keep >= self.tab_manager.tab_count() {
+            return;
+        }
+        self.pending_close_batch = Some(TabCloseBatch::Others { keep });
+        let indices: Vec<usize> = (0..self.tab_manager.tab_count())
+            .filter(|&i| i != keep)
+            .collect();
+        self.request_close_tab_indices(indices);
+    }
+
+    /// Close all tabs to the left of `from`.
+    pub fn close_tabs_to_left(&mut self, from: usize) {
+        if from == 0 {
+            return;
+        }
+        self.pending_close_batch = Some(TabCloseBatch::LeftOf { from });
+        let indices: Vec<usize> = (0..from).collect();
+        self.request_close_tab_indices(indices);
+    }
+
+    /// Close all tabs to the right of `from`.
+    pub fn close_tabs_to_right(&mut self, from: usize) {
+        if from + 1 >= self.tab_manager.tab_count() {
+            return;
+        }
+        self.pending_close_batch = Some(TabCloseBatch::RightOf { from });
+        let indices: Vec<usize> = (from + 1..self.tab_manager.tab_count()).collect();
+        self.request_close_tab_indices(indices);
+    }
+
+    fn request_close_tab_indices(&mut self, mut indices: Vec<usize>) {
+        indices.sort_unstable_by(|a, b| b.cmp(a));
+        let mut closed_any = false;
+        for idx in indices {
+            if self.tab_manager.tab_count() <= 1 {
+                self.pending_close_batch = None;
+                break;
+            }
+            if self.is_tab_dirty(idx) {
+                self.pending_close_tab = Some(idx);
+                self.show_unsaved_dialog = true;
+                return;
+            }
+            if self.tab_manager.close_tab(idx) {
+                closed_any = true;
+            }
+        }
+        if closed_any {
+            self.highlighter.clear_cache();
+            self.highlighter.invalidate_all();
+        }
+        self.pending_close_batch = None;
+    }
+
+    /// Resume a batch tab close after the unsaved-changes dialog closes one tab.
+    pub fn continue_tab_close_batch(&mut self, just_closed: usize) {
+        let Some(batch) = self.pending_close_batch else {
+            return;
+        };
+        match batch {
+            TabCloseBatch::Others { keep } => {
+                let keep = if just_closed < keep {
+                    keep.saturating_sub(1)
+                } else {
+                    keep
+                };
+                self.close_other_tabs(keep);
+            }
+            TabCloseBatch::LeftOf { from } => {
+                let from = if just_closed < from {
+                    from.saturating_sub(1)
+                } else {
+                    from
+                };
+                self.close_tabs_to_left(from);
+            }
+            TabCloseBatch::RightOf { from } => {
+                let from = if just_closed <= from {
+                    from.saturating_sub(1)
+                } else {
+                    from
+                };
+                self.close_tabs_to_right(from);
+            }
+        }
+    }
+
+    pub fn cancel_pending_tab_close(&mut self) {
+        self.pending_close_tab = None;
+        self.pending_close_batch = None;
+        self.show_unsaved_dialog = false;
+    }
+
+    pub fn finish_pending_tab_close(&mut self, closed_index: usize) {
+        self.pending_close_tab = None;
+        self.show_unsaved_dialog = false;
+        if self.pending_close_batch.is_some() {
+            self.continue_tab_close_batch(closed_index);
+        }
+    }
+
+    pub fn reveal_tab_in_folder(&self, tab_index: usize) {
+        let Some(path) = self
+            .tab_manager
+            .tabs()
+            .get(tab_index)
+            .and_then(|t| t.file_path.clone())
+        else {
+            return;
+        };
+        crate::platform::shell::reveal_file_in_folder(&path);
+    }
+
+    pub fn open_terminal_for_tab(&self, tab_index: usize) {
+        let Some(path) = self
+            .tab_manager
+            .tabs()
+            .get(tab_index)
+            .and_then(|t| t.file_path.clone())
+        else {
+            return;
+        };
+        crate::platform::shell::open_terminal_in_directory(&path);
+    }
+
+    pub fn locate_tab_in_file_tree(&mut self, tab_index: usize) {
+        let Some(path) = self
+            .tab_manager
+            .tabs()
+            .get(tab_index)
+            .and_then(|t| t.file_path.clone())
+        else {
+            return;
+        };
+        let Some(root) = self.workspace_root.clone() else {
+            return;
+        };
+        if !path.starts_with(&root) {
+            return;
+        }
+        self.file_tree.reveal_path(&path);
+        self.show_sidebar = true;
+        self.sidebar_tab = SidebarTab::FileExplorer;
+    }
+
+    pub fn copy_tab_path_to_clipboard(&mut self, tab_index: usize) {
+        if let Some(path) = self
+            .tab_manager
+            .tabs()
+            .get(tab_index)
+            .and_then(|t| t.file_path.as_ref())
+        {
+            copy_to_clipboard(&path.to_string_lossy());
+            self.transient_message = path.display().to_string();
+        }
+    }
+
+    pub fn begin_rename_tab(&mut self, tab_index: usize) {
+        let Some(tab) = self.tab_manager.tabs().get(tab_index) else {
+            return;
+        };
+        if tab.file_path.is_none() {
+            return;
+        }
+        self.rename_tab_index = Some(tab_index);
+        self.rename_tab_text = tab.title.clone();
+        self.show_rename_tab = true;
+    }
+
+    pub fn commit_rename_tab(&mut self) -> bool {
+        let Some(idx) = self.rename_tab_index else {
+            return false;
+        };
+        let Some(old_path) = self.tab_manager.tabs()[idx].file_path.clone() else {
+            return false;
+        };
+        let new_name = self.rename_tab_text.trim();
+        if new_name.is_empty() {
+            return false;
+        }
+        let new_path = match old_path.parent() {
+            Some(parent) => parent.join(new_name),
+            None => return false,
+        };
+        if new_path == old_path {
+            return true;
+        }
+        match std::fs::rename(&old_path, &new_path) {
+            Ok(()) => {
+                let tab = &mut self.tab_manager.tabs_mut()[idx];
+                tab.file_path = Some(new_path.clone());
+                tab.title = new_name.to_string();
+                self.config.add_recent_file(new_path);
+                let _ = self.config.save();
+                self.highlighter.clear_cache();
+                self.highlighter.invalidate_all();
+                true
+            }
+            Err(e) => {
+                log::error!("Failed to rename file: {e}");
+                false
+            }
+        }
+    }
+
+    pub fn save_tab_as_at(&mut self, tab_index: usize) {
+        self.tab_manager.set_active(tab_index);
+        self.save_as_dialog();
+    }
+
+    pub fn reload_tab_from_disk(&mut self, tab_index: usize) {
+        let Some(path) = self.tab_manager.tabs()[tab_index].file_path.clone() else {
+            return;
+        };
+        self.tab_manager.set_active(tab_index);
+        match self.tab_manager.active_mut().open_file(&path) {
+            Ok(()) => {
+                self.highlighter.clear_cache();
+                self.highlighter.invalidate_all();
+            }
+            Err(e) => log::error!("Failed to reload {}: {e}", path.display()),
+        }
+    }
+
+    pub fn add_tab_to_favorites(&mut self, tab_index: usize) {
+        let Some(path) = self
+            .tab_manager
+            .tabs()
+            .get(tab_index)
+            .and_then(|t| t.file_path.clone())
+        else {
+            return;
+        };
+        self.config.add_recent_file(path);
+        let _ = self.config.save();
+        let lang = &self.config.ui.ui_language;
+        self.transient_message = if crate::i18n::UiLanguage::parse(lang)
+            == crate::i18n::UiLanguage::Zh
+        {
+            "已添加到收藏夹".to_string()
+        } else {
+            "Added to favorites".to_string()
+        };
+    }
+
+    pub fn compare_tab_as_left(&mut self, tab_index: usize) {
+        let Some(left) = self.tab_manager.tabs()[tab_index].file_path.clone() else {
+            return;
+        };
+        self.tab_manager.set_active(tab_index);
+        let mut dialog = rfd::FileDialog::new().set_title(
+            if crate::i18n::UiLanguage::parse(&self.config.ui.ui_language)
+                == crate::i18n::UiLanguage::Zh
+            {
+                "选择右边对比文件"
+            } else {
+                "Select the right file to compare"
+            },
+        );
+        if let Some(parent) = left.parent() {
+            dialog = dialog.set_directory(parent);
+        }
+        if let Some(right) = dialog.pick_file() {
+            self.begin_comparison(left, right);
+        }
+    }
+
+    pub fn compare_tab_as_right(&mut self, tab_index: usize) {
+        let Some(right) = self.tab_manager.tabs()[tab_index].file_path.clone() else {
+            return;
+        };
+        self.tab_manager.set_active(tab_index);
+        let mut dialog = rfd::FileDialog::new().set_title(
+            if crate::i18n::UiLanguage::parse(&self.config.ui.ui_language)
+                == crate::i18n::UiLanguage::Zh
+            {
+                "选择左边对比文件"
+            } else {
+                "Select the left file to compare"
+            },
+        );
+        if let Some(parent) = right.parent() {
+            dialog = dialog.set_directory(parent);
+        };
+        if let Some(left) = dialog.pick_file() {
+            self.begin_comparison(left, right);
         }
     }
 
@@ -1265,22 +1641,7 @@ impl RustpadApp {
         let Some(path) = self.tab_manager.active().file_path.clone() else {
             return;
         };
-        #[cfg(target_os = "macos")]
-        {
-            let _ = std::process::Command::new("open").arg("-R").arg(&path).spawn();
-        }
-        #[cfg(target_os = "windows")]
-        {
-            let _ = std::process::Command::new("explorer")
-                .arg(format!("/select,{}", path.display()))
-                .spawn();
-        }
-        #[cfg(target_os = "linux")]
-        {
-            if let Some(parent) = path.parent() {
-                let _ = std::process::Command::new("xdg-open").arg(parent).spawn();
-            }
-        }
+        crate::platform::shell::reveal_file_in_folder(&path);
     }
 
     pub fn active_syntax_name(&self) -> String {
@@ -1742,9 +2103,15 @@ impl RustpadApp {
     pub fn find_all_in_current_document(&mut self) {
         self.refresh_search_results(true);
         let count = self.search_engine.results().len();
+        let items = self.build_search_items_from_engine_active_tab();
+        let scope = if crate::i18n::UiLanguage::parse(self.ui_lang()) == crate::i18n::UiLanguage::Zh {
+            "当前文件"
+        } else {
+            "Current file"
+        };
+        self.append_search_batch(scope.to_string(), items);
         self.search_status_message =
             crate::i18n::msg_find_all_current(self.ui_lang(), count);
-        self.show_search_results = true;
         self.remember_search_pattern();
     }
 
@@ -1790,8 +2157,13 @@ impl RustpadApp {
             }
         }
 
-        self.search_result_items = items;
-        self.show_search_results = true;
+        let scope = if crate::i18n::UiLanguage::parse(self.ui_lang()) == crate::i18n::UiLanguage::Zh {
+            "所有打开文件"
+        } else {
+            "All open files"
+        };
+        self.append_search_batch(scope.to_string(), items);
+        self.sync_search_engine_for_active_tab();
         self.search_status_message = crate::i18n::msg_find_all_open(
             self.ui_lang(),
             total,
@@ -1803,8 +2175,62 @@ impl RustpadApp {
     pub fn clear_search_status(&mut self) {
         self.search_status_message.clear();
         self.search_engine.set_current_index(None);
-        self.search_result_items.clear();
+        self.search_result_batches.clear();
+        self.active_result_batch_id = None;
         self.show_search_results = false;
+    }
+
+    fn append_search_batch(&mut self, scope_label: String, items: Vec<SearchResultItem>) {
+        let id = self.next_search_batch_id;
+        self.next_search_batch_id += 1;
+        self.search_result_batches.insert(
+            0,
+            SearchResultBatch {
+                id,
+                pattern: self.search_pattern.clone(),
+                scope_label,
+                items,
+                collapsed: false,
+                collapsed_docs: HashSet::new(),
+            },
+        );
+        self.active_result_batch_id = Some(id);
+        self.show_search_results = true;
+    }
+
+    fn build_search_items_from_engine_active_tab(&self) -> Vec<SearchResultItem> {
+        let tab_idx = self.tab_manager.active_index();
+        let doc = self.tab_manager.active().display_title();
+        self.search_engine
+            .results()
+            .iter()
+            .map(|m| {
+                let preview = self
+                    .tab_manager
+                    .active()
+                    .buffer
+                    .line(m.line)
+                    .unwrap_or_default()
+                    .trim_end()
+                    .to_string();
+                SearchResultItem {
+                    tab: tab_idx,
+                    doc: doc.clone(),
+                    line: m.line,
+                    col: m.col,
+                    start: m.start,
+                    end: m.end,
+                    preview,
+                }
+            })
+            .collect()
+    }
+
+    pub fn search_result_total_matches(&self) -> usize {
+        self.search_result_batches
+            .iter()
+            .map(|b| b.items.len())
+            .sum()
     }
 
     /// Sync UI search options into the search engine.
@@ -1813,13 +2239,23 @@ impl RustpadApp {
             .set_options(self.search_options.clone());
     }
 
+    /// Re-run search in the active tab only (keeps the results panel list unchanged).
+    fn sync_search_engine_for_active_tab(&mut self) {
+        if self.search_pattern.is_empty() {
+            return;
+        }
+        self.sync_search_engine_options();
+        let text = self.tab_manager.active().buffer.text();
+        let pattern = self.search_pattern.clone();
+        self.search_engine.find_all(&text, &pattern);
+    }
+
     /// Re-run search in the active tab and optionally jump to the first match.
     pub fn refresh_search_results(&mut self, jump_to_first: bool) {
         self.sync_search_engine_options();
         let text = self.tab_manager.active().buffer.text();
         let pattern = self.search_pattern.clone();
         self.search_engine.find_all(&text, &pattern);
-        self.rebuild_search_result_items();
 
         if jump_to_first {
             if self.search_engine.next_match().is_some() {
@@ -1833,47 +2269,34 @@ impl RustpadApp {
         }
     }
 
-    /// Rebuild the "Search results" list from the current document's matches.
-    pub fn rebuild_search_result_items(&mut self) {
-        let tab_idx = self.tab_manager.active_index();
-        let doc = self.tab_manager.active().display_title();
-        let mut items = Vec::with_capacity(self.search_engine.results().len());
-        for m in self.search_engine.results() {
-            let preview = self
-                .tab_manager
-                .active()
-                .buffer
-                .line(m.line)
-                .unwrap_or_default()
-                .trim_end()
-                .to_string();
-            items.push(SearchResultItem {
-                tab: tab_idx,
-                doc: doc.clone(),
-                line: m.line,
-                col: m.col,
-                start: m.start,
-                end: m.end,
-                preview,
-            });
-        }
-        self.search_result_items = items;
-    }
-
     /// Jump to a result-list entry, switching tabs if needed.
-    pub fn jump_to_result_item(&mut self, idx: usize) {
-        let Some(item) = self.search_result_items.get(idx).cloned() else {
+    pub fn jump_to_batch_item(&mut self, batch_id: usize, item_idx: usize) {
+        let Some(batch) = self
+            .search_result_batches
+            .iter()
+            .find(|b| b.id == batch_id)
+            .cloned()
+        else {
             return;
         };
+        let Some(item) = batch.items.get(item_idx).cloned() else {
+            return;
+        };
+
+        self.active_result_batch_id = Some(batch_id);
+        self.search_pattern = batch.pattern;
+
         if item.tab < self.tab_manager.tabs().len() {
             self.tab_manager.set_active(item.tab);
         }
-        // Keep the engine's "current match" in sync when the list maps 1:1 to the
-        // active document's results, so the editor highlights the right entry.
-        if item.tab == self.tab_manager.active_index()
-            && idx < self.search_engine.results().len()
+        self.sync_search_engine_for_active_tab();
+        if let Some(engine_idx) = self
+            .search_engine
+            .results()
+            .iter()
+            .position(|m| m.start == item.start && m.line == item.line)
         {
-            self.search_engine.set_current_index(Some(idx));
+            self.search_engine.set_current_index(Some(engine_idx));
         }
         let m = crate::search::SearchMatch {
             start: item.start,
@@ -1884,6 +2307,8 @@ impl RustpadApp {
         };
         self.go_to_search_match(&m);
         self.update_search_status_after_nav();
+        self.show_search_results = true;
+        self.editor_has_focus = true;
     }
 
     /// Move the editor cursor/selection to a search match and scroll it into view.
@@ -1900,13 +2325,13 @@ impl RustpadApp {
             .line_col_for_char_pos(m.end);
 
         let tab = self.tab_manager.active_mut();
+        // Invalidate auto-scroll guard so editor_view scrolls the match into view.
+        tab.last_auto_scroll_cursor = tab.cursor;
         tab.cursor = Cursor::new(end_line, end_col);
         tab.selection = Selection::new(
             Cursor::new(start_line, start_col),
             Cursor::new(end_line, end_col),
         );
-        let line_height = self.config.editor.font_size * 1.4;
-        tab.scroll_offset = start_line as f32 * line_height;
     }
 
     /// Find and highlight the next match.
@@ -1918,6 +2343,7 @@ impl RustpadApp {
         if let Some(m) = self.search_engine.next_match() {
             let m = m.clone();
             self.go_to_search_match(&m);
+            self.show_search_results = true;
         }
     }
 
@@ -1930,6 +2356,7 @@ impl RustpadApp {
         if let Some(m) = self.search_engine.prev_match() {
             let m = m.clone();
             self.go_to_search_match(&m);
+            self.show_search_results = true;
         }
     }
 
@@ -2297,6 +2724,7 @@ impl eframe::App for RustpadApp {
                 crate::platform::macos_menu::sync_encoding_open_checks(self);
             }
             self.collect_shortcuts(ctx);
+            self.handle_dropped_files(ctx);
             self.process_pending_actions();
         }
         self.update_status_bar();
@@ -2310,12 +2738,14 @@ impl eframe::App for RustpadApp {
         crate::ui::diff_toolbar::show(self, ctx);
         crate::ui::tab_bar::show(self, ctx);
         crate::ui::sidebar::show(self, ctx);
+        // Bottom panels must be registered before the central editor panel so the
+        // editor (and its quick-scroll arrows) shrink instead of being covered.
+        crate::ui::status_bar::show(self, ctx);
+        crate::ui::search_panel::show_results_panel(self, ctx);
         crate::ui::editor_view::show(self, ctx);
         // Search dialog must render after the editor so it stays on top and keeps focus.
         crate::ui::search_panel::show(self, ctx);
         crate::ui::search_panel::show_cross_file_search(self, ctx);
-        crate::ui::status_bar::show(self, ctx);
-        crate::ui::search_panel::show_results_panel(self, ctx);
         crate::ui::diff_view::show(self, ctx);
         crate::ui::dialogs::show_non_blocking(self, ctx);
 

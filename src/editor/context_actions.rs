@@ -221,7 +221,7 @@ pub fn text_to_html(text: &str) -> String {
     )
 }
 
-fn html_escape(s: &str) -> String {
+pub fn html_escape(s: &str) -> String {
     s.replace('&', "&amp;")
         .replace('<', "&lt;")
         .replace('>', "&gt;")
@@ -504,6 +504,22 @@ mod tests {
     }
 
     #[test]
+    fn test_html_escape_special_chars() {
+        assert_eq!(html_escape("&"), "&amp;");
+        assert_eq!(html_escape("<"), "&lt;");
+        assert_eq!(html_escape(">"), "&gt;");
+        assert_eq!(html_escape("\""), "&quot;");
+        assert_eq!(
+            html_escape("a&b<c>d\"e"),
+            "a&amp;b&lt;c&gt;d&quot;e"
+        );
+        assert_eq!(
+            html_escape("<script>alert(1)</script>"),
+            "&lt;script&gt;alert(1)&lt;/script&gt;"
+        );
+    }
+
+    #[test]
     fn test_rebuild_line_marks_multiline() {
         let mut extras = TabEditorExtras::default();
         extras.text_marks.push(TextMark {
@@ -514,7 +530,7 @@ mod tests {
         assert_eq!(extras.line_marks.get(&1), Some(&2));
         assert_eq!(extras.line_marks.get(&2), Some(&2));
         assert_eq!(extras.line_marks.get(&3), Some(&2));
-        assert!(extras.line_marks.get(&0).is_none());
+        assert!(!extras.line_marks.contains_key(&0));
     }
 
     #[test]

@@ -85,14 +85,13 @@ fn show_rename_tab_dialog(app: &mut RustpadApp, ctx: &egui::Context) {
             ui.label(label);
             let response = ui.text_edit_singleline(&mut app.rename_tab_text);
             ui.horizontal(|ui| {
-                if ui.button(app.tr().btn_save).clicked()
-                    || (response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)))
+                if (ui.button(app.tr().btn_save).clicked()
+                    || (response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter))))
+                    && app.commit_rename_tab()
                 {
-                    if app.commit_rename_tab() {
-                        app.show_rename_tab = false;
-                        app.rename_tab_index = None;
-                        app.rename_tab_text.clear();
-                    }
+                    app.show_rename_tab = false;
+                    app.rename_tab_index = None;
+                    app.rename_tab_text.clear();
                 }
                 if ui.button(app.tr().btn_cancel).clicked() {
                     app.show_rename_tab = false;
@@ -364,8 +363,8 @@ pub fn show_unsaved_dialog(app: &mut RustpadApp, ctx: &egui::Context) {
                             if needs_save_as {
                                 app.tab_manager.set_active(idx);
                                 app.save_as_dialog();
-                            } else {
-                                let _ = app.tab_manager.tabs_mut()[idx].save();
+                            } else if !app.save_tab_at_index(idx) {
+                                return;
                             }
                             if let Some(tab) = app.tab_manager.tabs().get(idx) {
                                 if !tab.buffer.is_dirty() && !tab.modified {
@@ -433,4 +432,36 @@ pub fn show_quit_unsaved_dialog(app: &mut RustpadApp, ctx: &egui::Context) {
                 }
             });
         });
+}
+
+pub fn show_save_error_dialog(app: &mut RustpadApp, ctx: &egui::Context) {
+    if !app.show_save_error_dialog {
+        return;
+    }
+
+    let t = app.tr();
+    modal_backdrop(ctx);
+
+    let mut open = app.show_save_error_dialog;
+    let mut dismiss = false;
+    egui::Window::new(t.dlg_save_error)
+        .collapsible(false)
+        .resizable(false)
+        .movable(false)
+        .open(&mut open)
+        .order(egui::Order::Foreground)
+        .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+        .show(ctx, |ui| {
+            ui.label(&app.save_error_message);
+            ui.separator();
+            ui.horizontal(|ui| {
+                if ui.button(t.btn_close).clicked() {
+                    dismiss = true;
+                }
+            });
+        });
+    if dismiss {
+        open = false;
+    }
+    app.show_save_error_dialog = open;
 }

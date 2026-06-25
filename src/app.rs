@@ -117,6 +117,8 @@ pub struct RustpadApp {
     pub show_batch_encoding: bool,
     pub show_unsaved_dialog: bool,
     pub show_quit_unsaved_dialog: bool,
+    pub show_save_error_dialog: bool,
+    pub save_error_message: String,
     pub show_cross_file_search: bool,
     pub search_replace_mode: bool,
     pub sidebar_tab: SidebarTab,
@@ -336,6 +338,8 @@ impl RustpadApp {
             show_batch_encoding: false,
             show_unsaved_dialog: false,
             show_quit_unsaved_dialog: false,
+            show_save_error_dialog: false,
+            save_error_message: String::new(),
             show_cross_file_search: false,
             search_replace_mode: false,
             sidebar_tab: SidebarTab::FileExplorer,
@@ -742,11 +746,11 @@ impl RustpadApp {
     /// Write the (possibly merged) left text back to its file.
     pub fn diff_save_left(&mut self) {
         if let Some(path) = self.diff_left_path.clone() {
-            if let Err(e) = std::fs::write(&path, &self.diff_left_text) {
-                log::error!("Failed to save {}: {}", path.display(), e);
-            } else {
+            let text = self.diff_left_text.clone();
+            let op = self.tr().err_op_save;
+            if self.write_file_with_feedback(&path, &text, op) {
                 self.diff_left_dirty = false;
-                self.sync_open_tab_with_disk(&path, &self.diff_left_text.clone());
+                self.sync_open_tab_with_disk(&path, &text);
             }
         }
     }
@@ -754,11 +758,11 @@ impl RustpadApp {
     /// Write the (possibly merged) right text back to its file.
     pub fn diff_save_right(&mut self) {
         if let Some(path) = self.diff_right_path.clone() {
-            if let Err(e) = std::fs::write(&path, &self.diff_right_text) {
-                log::error!("Failed to save {}: {}", path.display(), e);
-            } else {
+            let text = self.diff_right_text.clone();
+            let op = self.tr().err_op_save;
+            if self.write_file_with_feedback(&path, &text, op) {
                 self.diff_right_dirty = false;
-                self.sync_open_tab_with_disk(&path, &self.diff_right_text.clone());
+                self.sync_open_tab_with_disk(&path, &text);
             }
         }
     }
@@ -780,7 +784,7 @@ impl RustpadApp {
     }
 
     /// Export diff report as HTML.
-    pub fn export_diff_report(&self) {
+    pub fn export_diff_report(&mut self) {
         if let Some(ref result) = self.diff_result {
             let mut html = String::from("<!DOCTYPE html><html><head><style>");
             html.push_str("body { font-family: monospace; }");
@@ -801,7 +805,8 @@ impl RustpadApp {
                 };
                 html.push_str(&format!(
                     "<tr class=\"{}\"><td>{}</td></tr>",
-                    class, line.content
+                    class,
+                    crate::editor::context_actions::html_escape(&line.content),
                 ));
             }
 
@@ -811,7 +816,8 @@ impl RustpadApp {
                 .add_filter("HTML", &["html"])
                 .save_file()
             {
-                let _ = std::fs::write(path, html);
+                let op = self.tr().err_op_export;
+                let _ = self.write_file_with_feedback(path, html, op);
             }
         }
     }
@@ -908,9 +914,84 @@ impl RustpadApp {
     pub fn save_current_tab(&mut self) {
         let has_path = self.tab_manager.active().file_path.is_some();
         if has_path {
-            let _ = self.tab_manager.active_mut().save();
+            let idx = self.tab_manager.active_index();
+            let _ = self.save_tab_at_index(idx);
         } else {
             self.save_as_dialog();
+        }
+    }
+
+    /// Save a tab by index. Returns false when the write fails.
+    pub fn save_tab_at_index(&mut self, idx: usize) -> bool {
+        let Some(tab) = self.tab_manager.tabs().get(idx) else {
+            return false;
+        };
+        let file_label = tab
+            .file_path
+            .as_ref()
+            .map(|p| p.display().to_string())
+            .unwrap_or_else(|| tab.display_title());
+        match self.tab_manager.tabs_mut()[idx].save() {
+            Ok(()) => true,
+            Err(e) => {
+                self.report_save_failure(&file_label, &e);
+                false
+            }
+        }
+    }
+
+    /// Save the active tab to a new path. Returns false when the write fails.
+    pub fn save_active_tab_as(&mut self, path: &PathBuf) -> bool {
+        let file_label = path.display().to_string();
+        match self.tab_manager.active_mut().save_as(path) {
+            Ok(()) => {
+                self.tab_manager.active_mut().syntax_override = None;
+                self.highlighter.clear_cache();
+                self.highlighter.invalidate_all();
+                true
+            }
+            Err(e) => {
+                self.report_save_failure(&file_label, &e);
+                false
+            }
+        }
+    }
+
+    fn report_file_write_failure(
+        &mut self,
+        operation: &str,
+        file_label: &str,
+        err: &impl std::fmt::Display,
+    ) {
+        let lang = self.config.ui.ui_language.clone();
+        let message =
+            crate::i18n::file_write_failed_message(&lang, operation, file_label, &err.to_string());
+        log::error!("{message}");
+        self.save_error_message = message.clone();
+        self.transient_message = message;
+        self.show_save_error_dialog = true;
+    }
+
+    fn report_save_failure(&mut self, file_label: &str, err: &impl std::fmt::Display) {
+        let op = self.tr().err_op_save;
+        self.report_file_write_failure(op, file_label, err);
+    }
+
+    /// Write a file and surface failures in the status bar and error dialog.
+    pub fn write_file_with_feedback(
+        &mut self,
+        path: impl AsRef<std::path::Path>,
+        contents: impl AsRef<[u8]>,
+        operation: &'static str,
+    ) -> bool {
+        let path = path.as_ref();
+        let file_label = path.display().to_string();
+        match crate::atomic_write::atomic_write(path, contents.as_ref()) {
+            Ok(()) => true,
+            Err(e) => {
+                self.report_file_write_failure(operation, &file_label, &e);
+                false
+            }
         }
     }
 
@@ -950,19 +1031,18 @@ impl RustpadApp {
             if path.extension().is_none() {
                 path.set_extension("txt");
             }
-            let _ = self.tab_manager.active_mut().save_as(&path);
-            // New extension may change the language; refresh highlighting.
-            self.tab_manager.active_mut().syntax_override = None;
-            self.highlighter.clear_cache();
-            self.highlighter.invalidate_all();
+            let _ = self.save_active_tab_as(&path);
         }
     }
 
     /// Save all tabs that already have a file path.
     pub fn save_all_tabs(&mut self) {
-        for tab in self.tab_manager.tabs_mut() {
-            if tab.file_path.is_some() {
-                let _ = tab.save();
+        let count = self.tab_manager.tab_count();
+        for idx in 0..count {
+            if self.tab_manager.tabs()[idx].file_path.is_some()
+                && !self.save_tab_at_index(idx)
+            {
+                break;
             }
         }
     }
@@ -1023,8 +1103,8 @@ impl RustpadApp {
                 if still_unsaved {
                     return false;
                 }
-            } else {
-                let _ = self.tab_manager.active_mut().save();
+            } else if !self.save_tab_at_index(idx) {
+                return false;
             }
         }
         true
@@ -1938,7 +2018,9 @@ impl RustpadApp {
             .add_filter("HTML", &["html", "htm"])
             .save_file()
         {
-            let _ = std::fs::write(path, &self.html_preview_content);
+            let content = self.html_preview_content.clone();
+            let op = self.tr().err_op_export;
+            let _ = self.write_file_with_feedback(path, content, op);
         }
     }
 
@@ -1954,7 +2036,8 @@ impl RustpadApp {
             tab.buffer.slice(start, end)
         };
         if let Some(path) = rfd::FileDialog::new().save_file() {
-            let _ = std::fs::write(path, text);
+            let op = self.tr().err_op_export;
+            let _ = self.write_file_with_feedback(path, text, op);
         }
     }
 
@@ -2015,6 +2098,7 @@ impl RustpadApp {
             || self.show_about
             || self.show_unsaved_dialog
             || self.show_quit_unsaved_dialog
+            || self.show_save_error_dialog
             || self.show_html_preview
     }
 
@@ -2715,7 +2799,9 @@ impl eframe::App for RustpadApp {
 
         // Save prompts block interaction but the normal (bright) UI still renders
         // behind them, so the window keeps the app's light styling.
-        let blocking_dialog = self.show_quit_unsaved_dialog || self.show_unsaved_dialog;
+        let blocking_dialog = self.show_quit_unsaved_dialog
+            || self.show_unsaved_dialog
+            || self.show_save_error_dialog;
 
         if !blocking_dialog {
             #[cfg(target_os = "macos")]
@@ -2755,6 +2841,9 @@ impl eframe::App for RustpadApp {
         }
         if self.show_unsaved_dialog {
             crate::ui::dialogs::show_unsaved_dialog(self, ctx);
+        }
+        if self.show_save_error_dialog {
+            crate::ui::dialogs::show_save_error_dialog(self, ctx);
         }
 
         if let Some(until) = self.splash_until {

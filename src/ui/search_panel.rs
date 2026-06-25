@@ -192,12 +192,14 @@ pub fn show_results_panel(app: &mut RustpadApp, ctx: &egui::Context) {
                                                     paint_search_result_row(
                                                         ui,
                                                         app,
-                                                        batch_id,
-                                                        item_idx,
-                                                        item,
-                                                        line_no_width,
-                                                        &lang,
-                                                        &mut jump_target,
+                                                        &mut SearchResultRowParams {
+                                                            batch_id,
+                                                            item_idx,
+                                                            item,
+                                                            line_no_width,
+                                                            lang: &lang,
+                                                            jump_target: &mut jump_target,
+                                                        },
                                                     );
                                                 }
                                             }
@@ -209,12 +211,14 @@ pub fn show_results_panel(app: &mut RustpadApp, ctx: &egui::Context) {
                                             paint_search_result_row(
                                                 ui,
                                                 app,
-                                                batch_id,
-                                                item_idx,
-                                                item,
-                                                line_no_width,
-                                                &lang,
-                                                &mut jump_target,
+                                                &mut SearchResultRowParams {
+                                                    batch_id,
+                                                    item_idx,
+                                                    item,
+                                                    line_no_width,
+                                                    lang: &lang,
+                                                    jump_target: &mut jump_target,
+                                                },
                                             );
                                         }
                                     }
@@ -298,16 +302,26 @@ pub fn show_results_panel(app: &mut RustpadApp, ctx: &egui::Context) {
     }
 }
 
+struct SearchResultRowParams<'a> {
+    batch_id: usize,
+    item_idx: usize,
+    item: &'a SearchResultItem,
+    line_no_width: f32,
+    lang: &'a str,
+    jump_target: &'a mut Option<(usize, usize)>,
+}
+
 fn paint_search_result_row(
     ui: &mut egui::Ui,
     app: &RustpadApp,
-    batch_id: usize,
-    item_idx: usize,
-    item: &SearchResultItem,
-    line_no_width: f32,
-    lang: &str,
-    jump_target: &mut Option<(usize, usize)>,
+    params: &mut SearchResultRowParams<'_>,
 ) {
+    let batch_id = params.batch_id;
+    let item_idx = params.item_idx;
+    let item = params.item;
+    let line_no_width = params.line_no_width;
+    let lang = params.lang;
+    let jump_target = &mut *params.jump_target;
     let is_current = result_item_is_current(app, batch_id, item);
     let match_len = item.end.saturating_sub(item.start);
     let theme = app.theme_manager.current_theme().clone();
@@ -738,12 +752,4 @@ pub fn show_cross_file_search(app: &mut RustpadApp, ctx: &egui::Context) {
         open = false;
     }
     app.show_cross_file_search = open;
-}
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn test_search_panel_compiles() {
-        assert!(true);
-    }
 }

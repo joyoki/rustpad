@@ -12,6 +12,141 @@ const CONTENT_EXTENT_LINE_WIDTH: f32 = 2.0;
 /// Gap between line-number gutter (orange extent line) and the editor pane.
 const GUTTER_EDITOR_GAP: f32 = 2.0;
 
+#[derive(Clone, Copy)]
+struct EditorDisplayOpts {
+    font_size: f32,
+    display_blank: bool,
+    show_tabs_as_spaces: bool,
+    display_non_print: bool,
+}
+
+fn display_line_text(
+    line_text: &str,
+    display_blank: bool,
+    show_tabs_as_spaces: bool,
+    display_non_print: bool,
+) -> String {
+    let mut display = line_text.to_string();
+    if display_blank || show_tabs_as_spaces {
+        display = context_actions::visualize_whitespace(
+            &display,
+            display_blank,
+            show_tabs_as_spaces,
+        );
+    }
+    if display_non_print {
+        display = context_actions::visualize_non_prints(&display);
+    }
+    display
+}
+
+struct ColumnMapper<'a> {
+    painter: &'a egui::Painter,
+    opts: EditorDisplayOpts,
+}
+
+impl Copy for ColumnMapper<'_> {}
+
+impl Clone for ColumnMapper<'_> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<'a> ColumnMapper<'a> {
+    fn new(painter: &'a egui::Painter, opts: EditorDisplayOpts) -> Self {
+        Self { painter, opts }
+    }
+
+    fn col_to_x(&self, base_x: f32, line_text: &str, col: usize) -> f32 {
+        let prefix: String = line_text.chars().take(col).collect();
+        let display = display_line_text(
+            &prefix,
+            self.opts.display_blank,
+            self.opts.show_tabs_as_spaces,
+            self.opts.display_non_print,
+        );
+        if display.is_empty() {
+            return base_x;
+        }
+        let galley = self.painter.layout_no_wrap(
+            display,
+            egui::FontId::monospace(self.opts.font_size),
+            Color32::TRANSPARENT,
+        );
+        base_x + galley.size().x
+    }
+
+    fn x_to_col(&self, base_x: f32, line_text: &str, rel_x: f32) -> usize {
+        let line_len = line_text.chars().count();
+        if line_len == 0 {
+            return 0;
+        }
+
+        let target_x = base_x + rel_x.max(0.0);
+        let mut lo = 0usize;
+        let mut hi = line_len;
+
+        while lo < hi {
+            let mid = lo + (hi - lo) / 2;
+            if self.col_to_x(base_x, line_text, mid) < target_x {
+                lo = mid + 1;
+            } else {
+                hi = mid;
+            }
+        }
+
+        if lo > 0 {
+            let x_prev = self.col_to_x(base_x, line_text, lo - 1);
+            let x_lo = self.col_to_x(base_x, line_text, lo);
+            if target_x - x_prev < x_lo - target_x {
+                return lo - 1;
+            }
+        }
+        lo.min(line_len)
+    }
+
+    fn pointer_to_cursor(
+        &self,
+        pointer_pos: egui::Pos2,
+        editor_rect: egui::Rect,
+        line: usize,
+        line_text: &str,
+    ) -> Cursor {
+        let rel_x = pointer_pos.x - editor_rect.left();
+        let col = self.x_to_col(editor_rect.left(), line_text, rel_x);
+        Cursor::new(line, col)
+    }
+}
+
+struct LineMarkDrawCtx<'a> {
+    mapper: ColumnMapper<'a>,
+    buffer: &'a crate::editor::TextBuffer,
+    line_height: f32,
+}
+
+struct ContentExtentCtx<'a> {
+    painter: &'a egui::Painter,
+    fold_state: &'a FoldState,
+    origin_y: f32,
+    viewport_height: f32,
+    line_count: usize,
+    line_height: f32,
+    scroll_offset: f32,
+}
+
+struct SearchHighlightCtx<'a> {
+    app: &'a RustpadApp,
+    fold_state: &'a FoldState,
+    theme: &'a crate::config::theme::EditorTheme,
+    mapper: ColumnMapper<'a>,
+    start_pos: egui::Pos2,
+    first_visible_display: usize,
+    visible_lines_on_screen: usize,
+    line_height: f32,
+    current_scroll: f32,
+}
+
 /// Render the main editor view.
 pub fn show(app: &mut RustpadApp, ctx: &egui::Context) {
     // Hide the editor only when a diff is actually being shown. If diff mode is
@@ -170,6 +305,15 @@ pub fn show(app: &mut RustpadApp, ctx: &egui::Context) {
             let fold_state = app.tab_manager.active().editor_extras.fold_state.clone();
             let response = ui.allocate_rect(editor_rect, egui::Sense::click_and_drag());
             let painter = ui.painter();
+            let column_mapper = ColumnMapper::new(
+                painter,
+                EditorDisplayOpts {
+                    font_size,
+                    display_blank,
+                    show_tabs_as_spaces,
+                    display_non_print,
+                },
+            );
 
             // Right-click: open context menu, snapshot selection, move cursor to click.
             if response.secondary_clicked() {
@@ -189,16 +333,11 @@ pub fn show(app: &mut RustpadApp, ctx: &egui::Context) {
                         .buffer
                         .line(click_line)
                         .unwrap_or_default();
-                    let click_cursor = pointer_to_cursor(
-                        painter,
+                    let click_cursor = column_mapper.pointer_to_cursor(
                         pos,
                         editor_rect,
-                        font_size,
                         click_line,
                         line_text,
-                        display_blank,
-                        show_tabs_as_spaces,
-                        display_non_print,
                     );
                     app.tab_manager.active_mut().cursor = click_cursor;
                     if app.tab_manager.active().selection.is_empty() {
@@ -238,16 +377,11 @@ pub fn show(app: &mut RustpadApp, ctx: &egui::Context) {
                         .buffer
                         .line(click_line)
                         .unwrap_or_default();
-                    let cursor = pointer_to_cursor(
-                        painter,
+                    let cursor = column_mapper.pointer_to_cursor(
                         pointer_pos,
                         editor_rect,
-                        font_size,
                         click_line,
                         line_text,
-                        display_blank,
-                        show_tabs_as_spaces,
-                        display_non_print,
                     );
                     if shift {
                         let anchor = {
@@ -281,16 +415,11 @@ pub fn show(app: &mut RustpadApp, ctx: &egui::Context) {
                         .buffer
                         .line(click_line)
                         .unwrap_or_default();
-                    let cursor = pointer_to_cursor(
-                        painter,
+                    let cursor = column_mapper.pointer_to_cursor(
                         pointer_pos,
                         editor_rect,
-                        font_size,
                         click_line,
                         line_text,
-                        display_blank,
-                        show_tabs_as_spaces,
-                        display_non_print,
                     );
                     let anchor = app.tab_manager.active().selection.start;
                     app.tab_manager.active_mut().selection =
@@ -315,16 +444,11 @@ pub fn show(app: &mut RustpadApp, ctx: &egui::Context) {
                             .buffer
                             .line(click_line)
                             .unwrap_or_default();
-                        let cursor = pointer_to_cursor(
-                            painter,
+                        let cursor = column_mapper.pointer_to_cursor(
                             pointer_pos,
                             editor_rect,
-                            font_size,
                             click_line,
                             line_text,
-                            display_blank,
-                            show_tabs_as_spaces,
-                            display_non_print,
                         );
                         if shift {
                             let anchor = {
@@ -472,26 +596,8 @@ pub fn show(app: &mut RustpadApp, ctx: &egui::Context) {
                         .buffer
                         .line(i)
                         .unwrap_or_default();
-                    let x1 = col_to_x(
-                        painter,
-                        start_pos.x,
-                        line_text,
-                        sel_start_col,
-                        font_size,
-                        display_blank,
-                        show_tabs_as_spaces,
-                        display_non_print,
-                    );
-                    let x2 = col_to_x(
-                        painter,
-                        start_pos.x,
-                        line_text,
-                        sel_end_col,
-                        font_size,
-                        display_blank,
-                        show_tabs_as_spaces,
-                        display_non_print,
-                    );
+                    let x1 = column_mapper.col_to_x(start_pos.x, line_text, sel_start_col);
+                    let x2 = column_mapper.col_to_x(start_pos.x, line_text, sel_end_col);
                     painter.rect_filled(
                         egui::Rect::from_min_max(
                             egui::pos2(x1, y),
@@ -510,21 +616,17 @@ pub fn show(app: &mut RustpadApp, ctx: &egui::Context) {
                 app.search_pattern.is_empty(),
                 app.search_engine.results().len(),
             ) {
-                draw_search_match_highlights(
-                    painter,
+                draw_search_match_highlights(&SearchHighlightCtx {
                     app,
-                    &fold_state,
+                    fold_state: &fold_state,
+                    theme: &editor_theme,
+                    mapper: column_mapper,
                     start_pos,
                     first_visible_display,
                     visible_lines_on_screen,
                     line_height,
                     current_scroll,
-                    font_size,
-                    display_blank,
-                    show_tabs_as_spaces,
-                    display_non_print,
-                    &editor_theme,
-                );
+                });
             }
 
             // Draw text lines with syntax highlighting (color marks = background only).
@@ -541,17 +643,15 @@ pub fn show(app: &mut RustpadApp, ctx: &egui::Context) {
                 }
 
                 draw_line_mark_backgrounds(
-                    painter,
+                    &LineMarkDrawCtx {
+                        mapper: column_mapper,
+                        buffer: &app.tab_manager.active().buffer,
+                        line_height,
+                    },
                     text_marks,
-                    &app.tab_manager.active().buffer,
                     i,
                     start_pos.x,
                     y,
-                    line_height,
-                    font_size,
-                    display_blank,
-                    show_tabs_as_spaces,
-                    display_non_print,
                 );
 
                 if let Some(line_spans) = highlighted.get(i) {
@@ -596,16 +696,8 @@ pub fn show(app: &mut RustpadApp, ctx: &egui::Context) {
                         .buffer
                         .line(cursor_line)
                         .unwrap_or_default();
-                    let cursor_x = col_to_x(
-                        painter,
-                        start_pos.x,
-                        line_text,
-                        cursor_col,
-                        font_size,
-                        display_blank,
-                        show_tabs_as_spaces,
-                        display_non_print,
-                    );
+                    let cursor_x =
+                        column_mapper.col_to_x(start_pos.x, line_text, cursor_col);
 
                     let time = ctx.input(|i| i.time);
                     let visible = (time * 2.0) as i32 % 2 == 0;
@@ -680,18 +772,15 @@ fn line_y_in_viewport(y: f32, viewport_top: f32, viewport_height: f32, line_heig
 
 /// Foreground/syntax text color is unchanged; this only fills behind the glyphs.
 fn draw_line_mark_backgrounds(
-    painter: &egui::Painter,
+    ctx: &LineMarkDrawCtx<'_>,
     text_marks: &[crate::editor::context_actions::TextMark],
-    buffer: &crate::editor::TextBuffer,
     line: usize,
     start_x: f32,
     y: f32,
-    line_height: f32,
-    font_size: f32,
-    display_blank: bool,
-    show_tabs_as_spaces: bool,
-    display_non_print: bool,
 ) {
+    let painter = ctx.mapper.painter;
+    let line_height = ctx.line_height;
+    let buffer = ctx.buffer;
     for mark in text_marks {
         let norm = mark.selection.normalized();
         if norm.is_empty() || line < norm.start.line || line > norm.end.line {
@@ -711,26 +800,8 @@ fn draw_line_mark_backgrounds(
             continue;
         }
         let line_text = buffer.line(line).unwrap_or_default();
-        let x1 = col_to_x(
-            painter,
-            start_x,
-            line_text,
-            sel_start_col,
-            font_size,
-            display_blank,
-            show_tabs_as_spaces,
-            display_non_print,
-        );
-        let x2 = col_to_x(
-            painter,
-            start_x,
-            line_text,
-            sel_end_col,
-            font_size,
-            display_blank,
-            show_tabs_as_spaces,
-            display_non_print,
-        );
+        let x1 = ctx.mapper.col_to_x(start_x, line_text, sel_start_col);
+        let x2 = ctx.mapper.col_to_x(start_x, line_text, sel_end_col);
         let (r, g, b) = mark_line_color(mark.color);
         painter.rect_filled(
             egui::Rect::from_min_max(
@@ -917,28 +988,19 @@ fn content_extent_y_range(
 }
 
 /// Notepad++-style orange vertical line: height follows document content.
-fn draw_content_extent_line(
-    painter: &egui::Painter,
-    x: f32,
-    origin_y: f32,
-    viewport_height: f32,
-    line_count: usize,
-    line_height: f32,
-    scroll_offset: f32,
-    fold_state: &FoldState,
-) {
+fn draw_content_extent_line(x: f32, ctx: &ContentExtentCtx<'_>) {
     let Some((y_start, y_end)) = content_extent_y_range(
-        origin_y,
-        viewport_height,
-        line_count,
-        line_height,
-        scroll_offset,
-        fold_state,
+        ctx.origin_y,
+        ctx.viewport_height,
+        ctx.line_count,
+        ctx.line_height,
+        ctx.scroll_offset,
+        ctx.fold_state,
     ) else {
         return;
     };
     let orange = Color32::from_rgb(255, 140, 0);
-    painter.rect_filled(
+    ctx.painter.rect_filled(
         egui::Rect::from_min_max(
             egui::pos2(x - CONTENT_EXTENT_LINE_WIDTH, y_start),
             egui::pos2(x, y_end),
@@ -1008,14 +1070,16 @@ fn draw_line_numbers(
 
     // Orange content-extent line (Notepad++ style): from line 1 to last line of content.
     draw_content_extent_line(
-        painter,
         origin.x + gutter_width - GUTTER_EDITOR_GAP,
-        origin.y,
-        available_height,
-        line_count,
-        line_height,
-        scroll_offset,
-        fold_state,
+        &ContentExtentCtx {
+            painter,
+            fold_state,
+            origin_y: origin.y,
+            viewport_height: available_height,
+            line_count,
+            line_height,
+            scroll_offset,
+        },
     );
 }
 
@@ -1210,53 +1274,22 @@ fn handle_keyboard_input(app: &mut RustpadApp, ctx: &egui::Context) {
     }
 }
 
-fn display_line_text(
-    line_text: &str,
-    display_blank: bool,
-    show_tabs_as_spaces: bool,
-    display_non_print: bool,
-) -> String {
-    let mut display = line_text.to_string();
-    if display_blank || show_tabs_as_spaces {
-        display = context_actions::visualize_whitespace(
-            &display,
-            display_blank,
-            show_tabs_as_spaces,
-        );
-    }
-    if display_non_print {
-        display = context_actions::visualize_non_prints(&display);
-    }
-    display
-}
-
-fn draw_search_match_highlights(
-    painter: &egui::Painter,
-    app: &RustpadApp,
-    fold_state: &FoldState,
-    start_pos: egui::Pos2,
-    first_visible_display: usize,
-    visible_lines_on_screen: usize,
-    line_height: f32,
-    current_scroll: f32,
-    font_size: f32,
-    display_blank: bool,
-    show_tabs_as_spaces: bool,
-    display_non_print: bool,
-    theme: &crate::config::theme::EditorTheme,
-) {
-    let match_bg = theme.search_highlight_bg_color();
-    let current_bg = theme.search_current_highlight_bg_color();
-    let current_idx = app.search_engine.current_index();
-    let results: Vec<crate::search::SearchMatch> = app.search_engine.results().to_vec();
+fn draw_search_match_highlights(ctx: &SearchHighlightCtx<'_>) {
+    let match_bg = ctx.theme.search_highlight_bg_color();
+    let current_bg = ctx.theme.search_current_highlight_bg_color();
+    let current_idx = ctx.app.search_engine.current_index();
+    let results: Vec<crate::search::SearchMatch> = ctx.app.search_engine.results().to_vec();
+    let painter = ctx.mapper.painter;
 
     for (mi, m) in results.iter().enumerate() {
-        let (s_line, s_col) = app
+        let (s_line, s_col) = ctx
+            .app
             .tab_manager
             .active()
             .buffer
             .line_col_for_char_pos(m.start);
-        let (e_line, e_col) = app
+        let (e_line, e_col) = ctx
+            .app
             .tab_manager
             .active()
             .buffer
@@ -1268,18 +1301,25 @@ fn draw_search_match_highlights(
         };
 
         for line_idx in s_line..=e_line {
-            if fold_state.is_line_hidden(line_idx) {
+            if ctx.fold_state.is_line_hidden(line_idx) {
                 continue;
             }
-            let Some(vis) = fold_state.visible_line_index(line_idx) else {
+            let Some(vis) = ctx.fold_state.visible_line_index(line_idx) else {
                 continue;
             };
-            if vis < first_visible_display || vis >= first_visible_display + visible_lines_on_screen
+            if vis < ctx.first_visible_display
+                || vis >= ctx.first_visible_display + ctx.visible_lines_on_screen
             {
                 continue;
             }
-            let y = FoldState::visible_line_y(start_pos.y, vis, line_height, current_scroll);
-            let line_text = app
+            let y = FoldState::visible_line_y(
+                ctx.start_pos.y,
+                vis,
+                ctx.line_height,
+                ctx.current_scroll,
+            );
+            let line_text = ctx
+                .app
                 .tab_manager
                 .active()
                 .buffer
@@ -1289,132 +1329,22 @@ fn draw_search_match_highlights(
             let col_end = if line_idx == e_line {
                 e_col
             } else {
-                app.tab_manager.active().buffer.line_len(line_idx)
+                ctx.app.tab_manager.active().buffer.line_len(line_idx)
             };
-            let x1 = col_to_x(
-                painter,
-                start_pos.x,
-                line_text,
-                col_start,
-                font_size,
-                display_blank,
-                show_tabs_as_spaces,
-                display_non_print,
-            );
-            let x2 = col_to_x(
-                painter,
-                start_pos.x,
-                line_text,
-                col_end,
-                font_size,
-                display_blank,
-                show_tabs_as_spaces,
-                display_non_print,
-            );
+            let x1 = ctx
+                .mapper
+                .col_to_x(ctx.start_pos.x, line_text, col_start);
+            let x2 = ctx.mapper.col_to_x(ctx.start_pos.x, line_text, col_end);
             painter.rect_filled(
                 egui::Rect::from_min_max(
                     egui::pos2(x1, y),
-                    egui::pos2(x2.max(x1 + 1.0), y + line_height),
+                    egui::pos2(x2.max(x1 + 1.0), y + ctx.line_height),
                 ),
                 0.0,
                 color,
             );
         }
     }
-}
-
-fn col_to_x(
-    painter: &egui::Painter,
-    base_x: f32,
-    line_text: &str,
-    col: usize,
-    font_size: f32,
-    display_blank: bool,
-    show_tabs_as_spaces: bool,
-    display_non_print: bool,
-) -> f32 {
-    let prefix: String = line_text.chars().take(col).collect();
-    let display = display_line_text(
-        &prefix,
-        display_blank,
-        show_tabs_as_spaces,
-        display_non_print,
-    );
-    if display.is_empty() {
-        return base_x;
-    }
-    let galley = painter.layout_no_wrap(
-        display,
-        egui::FontId::monospace(font_size),
-        Color32::TRANSPARENT,
-    );
-    base_x + galley.size().x
-}
-
-fn x_to_col(
-    painter: &egui::Painter,
-    base_x: f32,
-    line_text: &str,
-    rel_x: f32,
-    font_size: f32,
-    display_blank: bool,
-    show_tabs_as_spaces: bool,
-    display_non_print: bool,
-) -> usize {
-    let line_len = line_text.chars().count();
-    if line_len == 0 {
-        return 0;
-    }
-
-    let target_x = base_x + rel_x.max(0.0);
-    let mut lo = 0usize;
-    let mut hi = line_len;
-
-    while lo < hi {
-        let mid = lo + (hi - lo) / 2;
-        if col_to_x(
-            painter,
-            base_x,
-            line_text,
-            mid,
-            font_size,
-            display_blank,
-            show_tabs_as_spaces,
-            display_non_print,
-        ) < target_x
-        {
-            lo = mid + 1;
-        } else {
-            hi = mid;
-        }
-    }
-
-    if lo > 0 {
-        let x_prev = col_to_x(
-            painter,
-            base_x,
-            line_text,
-            lo - 1,
-            font_size,
-            display_blank,
-            show_tabs_as_spaces,
-            display_non_print,
-        );
-        let x_lo = col_to_x(
-            painter,
-            base_x,
-            line_text,
-            lo,
-            font_size,
-            display_blank,
-            show_tabs_as_spaces,
-            display_non_print,
-        );
-        if target_x - x_prev < x_lo - target_x {
-            return lo - 1;
-        }
-    }
-    lo.min(line_len)
 }
 
 fn line_from_pointer_y(
@@ -1430,32 +1360,6 @@ fn line_from_pointer_y(
     fold_state
         .buffer_line_at_visible_index(visible_index, line_count)
         .unwrap_or(line_count.saturating_sub(1))
-}
-
-fn pointer_to_cursor(
-    painter: &egui::Painter,
-    pointer_pos: egui::Pos2,
-    editor_rect: egui::Rect,
-    font_size: f32,
-    line: usize,
-    line_text: &str,
-    display_blank: bool,
-    show_tabs_as_spaces: bool,
-    display_non_print: bool,
-) -> Cursor {
-    let base_x = editor_rect.left();
-    let rel_x = pointer_pos.x - base_x;
-    let col = x_to_col(
-        painter,
-        base_x,
-        line_text,
-        rel_x,
-        font_size,
-        display_blank,
-        show_tabs_as_spaces,
-        display_non_print,
-    );
-    Cursor::new(line, col)
 }
 
 fn select_word_at_cursor(app: &mut RustpadApp) {

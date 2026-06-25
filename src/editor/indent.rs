@@ -238,8 +238,10 @@ mod tests {
 
     #[test]
     fn test_smart_indent_config() {
-        let mut config = IndentConfig::default();
-        config.tab_size = 2;
+        let config = IndentConfig {
+            tab_size: 2,
+            ..Default::default()
+        };
         let engine = IndentEngine::new(config);
         assert_eq!(engine.indent_string(1), "  ");
     }

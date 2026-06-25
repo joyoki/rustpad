@@ -145,7 +145,7 @@ pub fn show(app: &mut RustpadApp, ctx: &egui::Context) {
     }
 
     if app.keybindings_recording.is_some() {
-        if let Some(binding) = ctx.input(|i| KeyBinding::capture_from_input(i)) {
+        if let Some(binding) = ctx.input(KeyBinding::capture_from_input) {
             if let Some(cmd) = app.keybindings_recording.take() {
                 app.keybindings_edit.set_binding(cmd, binding);
             }

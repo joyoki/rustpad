@@ -279,7 +279,7 @@ impl FoldState {
     }
 
     /// Expanded ranges whose body still contains `line` (for scope guide lines).
-    pub fn expanded_ranges_containing<'a>(&'a self, line: usize) -> Vec<&'a FoldRange> {
+    pub fn expanded_ranges_containing(&self, line: usize) -> Vec<&FoldRange> {
         self.ranges
             .iter()
             .filter(|r| !r.folded && r.start_line <= line && line <= r.end_line)

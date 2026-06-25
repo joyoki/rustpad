@@ -213,7 +213,7 @@ fn decode_utf16(bytes: &[u8], little_endian: bool) -> String {
         }
     }
     let data = &bytes[start..];
-    if data.len() % 2 != 0 {
+    if !data.len().is_multiple_of(2) {
         return String::from_utf8_lossy(bytes).into_owned();
     }
     let units: Vec<u16> = data

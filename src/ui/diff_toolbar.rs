@@ -87,11 +87,3 @@ pub fn show(app: &mut RustpadApp, ctx: &egui::Context) {
         });
     });
 }
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn test_diff_toolbar_compiles() {
-        assert!(true);
-    }
-}

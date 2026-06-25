@@ -315,7 +315,6 @@ impl Highlighter {
         all.into_iter()
             .enumerate()
             .filter(|(idx, _)| *idx >= first_line && *idx <= last_line)
-            .map(|(idx, spans)| (idx, spans))
             .collect()
     }
 

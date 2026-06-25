@@ -394,12 +394,3 @@ fn show_editor_area(app: &mut RustpadApp, ctx: &egui::Context) {
         });
     });
 }
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn test_layout_module_compiles() {
-        // Verify layout module is properly linked
-        assert!(true);
-    }
-}

@@ -242,11 +242,3 @@ fn build_job(text: &str, spans: &[(usize, usize)]) -> egui::text::LayoutJob {
 
     job
 }
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn test_diff_view_compiles() {
-        assert!(true);
-    }
-}

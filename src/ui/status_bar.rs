@@ -28,15 +28,17 @@ pub fn show(app: &mut RustpadApp, ctx: &egui::Context) {
 
     let mut selected_language: Option<String> = None;
     let transient = app.transient_message.clone();
+    let save_error_active = app.show_save_error_dialog || !app.save_error_message.is_empty();
 
     egui::TopBottomPanel::bottom("status_bar").show(ctx, |ui| {
         ui.horizontal(|ui| {
             if !transient.is_empty() {
-                ui.label(
-                    egui::RichText::new(&transient)
-                        .italics()
-                        .color(egui::Color32::from_rgb(0, 100, 180)),
-                );
+                let color = if save_error_active {
+                    egui::Color32::from_rgb(200, 40, 40)
+                } else {
+                    egui::Color32::from_rgb(0, 100, 180)
+                };
+                ui.label(egui::RichText::new(&transient).italics().color(color));
                 ui.separator();
             }
             // Cursor position

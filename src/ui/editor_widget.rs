@@ -343,11 +343,3 @@ fn handle_text_input(app: &mut RustpadApp, ctx: &egui::Context) {
         }
     });
 }
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn test_editor_widget_compiles() {
-        assert!(true);
-    }
-}

@@ -499,7 +499,7 @@ impl KeyBindings {
                     && binding_a.alt == binding_b.alt
                     && binding_a.key == binding_b.key
                 {
-                    conflicts.push(((*cmd_a).clone(), (*cmd_b).clone(), (*binding_a).clone()));
+                    conflicts.push((**cmd_a, **cmd_b, (*binding_a).clone()));
                 }
             }
         }

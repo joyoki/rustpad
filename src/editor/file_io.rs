@@ -108,8 +108,21 @@ fn detect_bom_and_encoding(bytes: &[u8]) -> (BomType, FileEncoding) {
         return (BomType::None, FileEncoding::Utf8);
     }
 
-    // Default to Latin-1 for unknown encodings
-    (BomType::None, FileEncoding::Latin1)
+    let (_, _, gbk_errors) = encoding_rs::GBK.decode(bytes);
+    if !gbk_errors {
+        return (BomType::None, FileEncoding::Gbk);
+    }
+
+    let (_, _, latin_errors) = encoding_rs::WINDOWS_1252.decode(bytes);
+    if !latin_errors {
+        return (BomType::None, FileEncoding::Latin1);
+    }
+
+    if cfg!(windows) {
+        (BomType::None, FileEncoding::Gbk)
+    } else {
+        (BomType::None, FileEncoding::Latin1)
+    }
 }
 
 /// Decode bytes to UTF-8 string based on encoding.

@@ -145,7 +145,10 @@ impl EncodingProfile {
     }
 }
 
-/// Auto-detect encoding from raw bytes (BOM only; otherwise default UTF-8).
+/// Auto-detect encoding from raw bytes.
+///
+/// Order: BOM markers, valid UTF-8, clean GBK (common on Chinese Windows),
+/// clean Windows-1252, then a platform-appropriate ANSI fallback.
 pub fn detect_encoding_profile(bytes: &[u8]) -> EncodingProfile {
     if bytes.len() >= 3 && bytes[..3] == [0xEF, 0xBB, 0xBF] {
         return EncodingProfile::Utf8Bom;
@@ -156,7 +159,25 @@ pub fn detect_encoding_profile(bytes: &[u8]) -> EncodingProfile {
     if bytes.len() >= 2 && bytes[..2] == [0xFE, 0xFF] {
         return EncodingProfile::Utf16Be;
     }
-    EncodingProfile::Utf8
+    if std::str::from_utf8(bytes).is_ok() {
+        return EncodingProfile::Utf8;
+    }
+
+    let (_, _, gbk_errors) = encoding_rs::GBK.decode(bytes);
+    if !gbk_errors {
+        return EncodingProfile::AnsiGbk;
+    }
+
+    let (_, _, latin_errors) = encoding_rs::WINDOWS_1252.decode(bytes);
+    if !latin_errors {
+        return EncodingProfile::Latin1;
+    }
+
+    if cfg!(windows) {
+        EncodingProfile::AnsiGbk
+    } else {
+        EncodingProfile::Utf8
+    }
 }
 
 fn utf8_bom_skip(bytes: &[u8]) -> usize {
@@ -233,8 +254,15 @@ mod tests {
     }
 
     #[test]
-    fn test_detect_defaults_to_utf8_without_bom() {
-        assert_eq!(detect_encoding_profile(&[0x80, 0x81, 0x82]), EncodingProfile::Utf8);
+    fn test_detect_gbk_without_bom() {
+        let bytes = EncodingProfile::AnsiGbk.encode_text("中文测试", LineEnding::Lf);
+        assert_eq!(detect_encoding_profile(&bytes), EncodingProfile::AnsiGbk);
+    }
+
+    #[test]
+    fn test_detect_latin1_without_bom() {
+        let bytes = EncodingProfile::Latin1.encode_text("café", LineEnding::Lf);
+        assert_eq!(detect_encoding_profile(&bytes), EncodingProfile::Latin1);
     }
 
     #[test]

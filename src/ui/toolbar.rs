@@ -8,6 +8,27 @@ const FONT_SIZE_MAX: u32 = 72;
 const FONT_SIZE_FIELD_ID: &str = "rustpad_toolbar_font_size";
 /// Below this width, toolbar shows icons only; wider layouts show icon + label.
 const TOOLBAR_COMPACT_WIDTH: f32 = 820.0;
+/// Toolbar row height (egui default `interact_size.y` is 18.0).
+pub const TOOLBAR_HEIGHT: f32 = 30.0;
+const TOOLBAR_INTERACT_HEIGHT: f32 = TOOLBAR_HEIGHT - 4.0;
+const TOOLBAR_FONT_SIZE: f32 = 14.0;
+const TOOLBAR_BUTTON_PADDING: egui::Vec2 = egui::Vec2::new(8.0, 5.0);
+const TOOLBAR_ITEM_SPACING_X: f32 = 6.0;
+const TOOLBAR_FONT_FIELD_WIDTH: f32 = 40.0;
+
+fn apply_toolbar_style(ui: &mut egui::Ui) {
+    let mut style = ui.style().as_ref().clone();
+    style.spacing.interact_size.y = TOOLBAR_INTERACT_HEIGHT;
+    style.spacing.button_padding = TOOLBAR_BUTTON_PADDING;
+    style.spacing.item_spacing.x = TOOLBAR_ITEM_SPACING_X;
+    style
+        .text_styles
+        .insert(egui::TextStyle::Button, egui::FontId::proportional(TOOLBAR_FONT_SIZE));
+    style
+        .text_styles
+        .insert(egui::TextStyle::Body, egui::FontId::proportional(TOOLBAR_FONT_SIZE));
+    ui.set_style(style);
+}
 
 fn toolbar_label(icon: &str, text: &str, compact: bool) -> String {
     if compact {
@@ -63,13 +84,16 @@ fn show_font_size_input(
     let field_id = egui::Id::new(FONT_SIZE_FIELD_ID);
 
     let response = ui
-        .horizontal(|ui| {
+        .with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
             ui.spacing_mut().item_spacing.x = 2.0;
             let resp = ui.add(
                 egui::TextEdit::singleline(text_buf)
                     .id(field_id)
-                    .desired_width(36.0)
+                    .desired_width(TOOLBAR_FONT_FIELD_WIDTH)
+                    .min_size(egui::vec2(TOOLBAR_FONT_FIELD_WIDTH, TOOLBAR_INTERACT_HEIGHT))
                     .horizontal_align(egui::Align::Center)
+                    .vertical_align(egui::Align::Center)
+                    .margin(egui::Margin::symmetric(4.0, 0.0))
                     .lock_focus(*editing),
             );
             ui.label("px");
@@ -104,10 +128,13 @@ fn show_font_size_input(
 /// Render the toolbar with common action buttons.
 pub fn show(app: &mut RustpadApp, ctx: &egui::Context) {
     let t = app.tr();
-    egui::TopBottomPanel::top("toolbar").show(ctx, |ui| {
+    egui::TopBottomPanel::top("toolbar")
+        .exact_height(TOOLBAR_HEIGHT)
+        .show(ctx, |ui| {
+        apply_toolbar_style(ui);
         let compact = ui.available_width() < TOOLBAR_COMPACT_WIDTH;
+        ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
         ui.horizontal_wrapped(|ui| {
-            ui.spacing_mut().item_spacing.x = 4.0;
             if toolbar_button(
                 ui,
                 &toolbar_label(t.tb_new, t.tb_label_new, compact),
@@ -196,6 +223,7 @@ pub fn show(app: &mut RustpadApp, ctx: &egui::Context) {
                     format!("{}", app.config.editor.font_size as u32);
                 app.toolbar_font_size_editing = false;
             }
+        });
         });
     });
 }

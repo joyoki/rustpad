@@ -1,149 +1,120 @@
 #!/bin/bash
+# RustPad macOS release builder.
+#
+# Local development (default — ad-hoc signature, no notarization):
+#   ./scripts/build_macos.sh
+#   ./scripts/build_macos.sh --adhoc
+#
+# Public distribution (Developer ID + notarization + staple):
+#   export SIGN_MODE=release
+#   export MACOS_SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)"
+#   export APPLE_ID="you@example.com"
+#   export APPLE_APP_PASSWORD="xxxx-xxxx-xxxx-xxxx"
+#   export APPLE_TEAM_ID="XXXXXXXXXX"
+#   ./scripts/build_macos.sh --release
+#
+# Or use a stored notarytool keychain profile:
+#   xcrun notarytool store-credentials rustpad-notary \
+#     --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD"
+#   export NOTARYTOOL_KEYCHAIN_PROFILE=rustpad-notary
+#   ./scripts/build_macos.sh --release
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 APP_NAME="RustPad"
-VERSION="0.1.0"
+SIGN_MODE="${SIGN_MODE:-adhoc}"
+VERSION="$("$SCRIPT_DIR/read_cargo_version.sh" "$PROJECT_DIR")"
 BUNDLE_OSX_DIR="${PROJECT_DIR}/target/release/bundle/osx"
+APP_DIR="${PROJECT_DIR}/${APP_NAME}.app"
+DMG_PATH="${PROJECT_DIR}/${APP_NAME}.dmg"
+
+usage() {
+    sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'
+}
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --adhoc)
+            SIGN_MODE=adhoc
+            shift
+            ;;
+        --release)
+            SIGN_MODE=release
+            shift
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        *)
+            echo "error: unknown argument: $1" >&2
+            usage >&2
+            exit 1
+            ;;
+    esac
+done
+
+export SIGN_MODE
 
 echo "=== RustPad macOS 构建脚本 ==="
 echo "项目目录: $PROJECT_DIR"
+echo "版本号:   $VERSION (来自 Cargo.toml)"
+echo "签名模式: $SIGN_MODE"
 
-# 1. 编译 release
 echo ""
 echo ">>> 步骤 1/6: 编译 release..."
 cd "$PROJECT_DIR"
-cargo build --release 2>&1
+cargo build --release
 echo "编译完成"
 
-# 2. 清理旧产物
 echo ""
 echo ">>> 步骤 2/6: 清理旧产物..."
-rm -rf "${PROJECT_DIR}/${APP_NAME}.app"
+rm -rf "$APP_DIR"
 rm -rf "${BUNDLE_OSX_DIR}/${APP_NAME}.app"
-rm -f "${PROJECT_DIR}/${APP_NAME}.dmg"
-mkdir -p "${BUNDLE_OSX_DIR}"
+rm -f "$DMG_PATH"
+mkdir -p "$BUNDLE_OSX_DIR"
 
-# 3. 创建 .app 结构
 echo ""
 echo ">>> 步骤 3/6: 创建 .app 包..."
-APP_DIR="${PROJECT_DIR}/${APP_NAME}.app"
-mkdir -p "${APP_DIR}/Contents/MacOS"
-mkdir -p "${APP_DIR}/Contents/Resources"
+"$SCRIPT_DIR/macos_package_app.sh" "$APP_DIR" "$PROJECT_DIR"
 
-cp "${PROJECT_DIR}/target/release/rustpad" "${APP_DIR}/Contents/MacOS/${APP_NAME}"
-chmod +x "${APP_DIR}/Contents/MacOS/${APP_NAME}"
-
-if [ -f "${PROJECT_DIR}/assets/icon.icns" ]; then
-    cp "${PROJECT_DIR}/assets/icon.icns" "${APP_DIR}/Contents/Resources/icon.icns"
-fi
-
-cat > "${APP_DIR}/Contents/Info.plist" << PLIST
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>CFBundleExecutable</key>
-    <string>RustPad</string>
-    <key>CFBundleIdentifier</key>
-    <string>com.rustpad.editor</string>
-    <key>CFBundleName</key>
-    <string>RustPad</string>
-    <key>CFBundleDisplayName</key>
-    <string>RustPad</string>
-    <key>CFBundleVersion</key>
-    <string>1</string>
-    <key>CFBundleShortVersionString</key>
-    <string>0.1.0</string>
-    <key>CFBundlePackageType</key>
-    <string>APPL</string>
-    <key>CFBundleSignature</key>
-    <string>????</string>
-    <key>CFBundleIconFile</key>
-    <string>icon</string>
-    <key>LSMinimumSystemVersion</key>
-    <string>12.0</string>
-    <key>NSHighResolutionCapable</key>
-    <true/>
-    <key>NSRequiresAquaSystemAppearance</key>
-    <false/>
-    <key>CFBundleDocumentTypes</key>
-    <array>
-        <dict>
-            <key>CFBundleTypeName</key>
-            <string>Text File</string>
-            <key>CFBundleTypeExtensions</key>
-            <array>
-                <string>txt</string>
-                <string>rs</string>
-                <string>py</string>
-                <string>js</string>
-                <string>ts</string>
-                <string>html</string>
-                <string>css</string>
-                <string>json</string>
-                <string>toml</string>
-                <string>md</string>
-                <string>xml</string>
-                <string>yml</string>
-                <string>yaml</string>
-                <string>sh</string>
-                <string>c</string>
-                <string>cpp</string>
-                <string>h</string>
-                <string>java</string>
-                <string>go</string>
-            </array>
-            <key>CFBundleTypeRole</key>
-            <string>Editor</string>
-        </dict>
-    </array>
-</dict>
-</plist>
-PLIST
-
-echo "Info.plist 已生成"
-
-# 4. 同步到 cargo-bundle 标准路径
 echo ""
 echo ">>> 步骤 4/6: 同步到 target/release/bundle/osx/..."
-cp -R "${APP_DIR}" "${BUNDLE_OSX_DIR}/${APP_NAME}.app"
+cp -R "$APP_DIR" "${BUNDLE_OSX_DIR}/${APP_NAME}.app"
 
-# 5. 代码签名 (adhoc + entitlements)
 echo ""
 echo ">>> 步骤 5/6: 代码签名..."
-ENTITLEMENTS="${PROJECT_DIR}/RustPad.entitlements"
-for APP in "${APP_DIR}" "${BUNDLE_OSX_DIR}/${APP_NAME}.app"; do
-    codesign --force --deep --sign - \
-        --entitlements "${ENTITLEMENTS}" \
-        "${APP}" 2>&1
-    codesign --verify --deep --strict "${APP}" 2>&1 && echo "签名验证通过: ${APP}"
-done
+"$SCRIPT_DIR/macos_codesign.sh" "$APP_DIR" "$PROJECT_DIR"
+"$SCRIPT_DIR/macos_codesign.sh" "${BUNDLE_OSX_DIR}/${APP_NAME}.app" "$PROJECT_DIR"
 
-# 6. 创建 DMG
 echo ""
 echo ">>> 步骤 6/6: 创建 DMG..."
-DMG_NAME="${PROJECT_DIR}/${APP_NAME}.dmg"
-STAGING_DIR=$(mktemp -d)
-cp -R "${BUNDLE_OSX_DIR}/${APP_NAME}.app" "${STAGING_DIR}/"
-ln -s /Applications "${STAGING_DIR}/Applications"
+"$SCRIPT_DIR/macos_create_dmg.sh" "${BUNDLE_OSX_DIR}/${APP_NAME}.app" "$DMG_PATH"
+cp -f "$DMG_PATH" "${PROJECT_DIR}/${APP_NAME}-${VERSION}.dmg" 2>/dev/null || true
 
-hdiutil create \
-    -volname "${APP_NAME}" \
-    -srcfolder "${STAGING_DIR}" \
-    -ov \
-    -format UDZO \
-    "${DMG_NAME}" 2>&1 || {
-    echo "警告: hdiutil 创建 DMG 失败，请在本机终端手动运行此脚本"
-    exit 1
-}
-
-rm -rf "${STAGING_DIR}"
-hdiutil verify "${DMG_NAME}" 2>&1
+if [ "$SIGN_MODE" = "release" ]; then
+    echo ""
+    echo ">>> 步骤 7/7: 签名 DMG、公证并 staple..."
+    "$SCRIPT_DIR/macos_codesign.sh" "$DMG_PATH" "$PROJECT_DIR"
+    "$SCRIPT_DIR/macos_notarize.sh" "$DMG_PATH"
+    "$SCRIPT_DIR/macos_notarize.sh" "$APP_DIR"
+    cp -f "$DMG_PATH" "${PROJECT_DIR}/${APP_NAME}-${VERSION}-notarized.dmg"
+fi
 
 echo ""
 echo "=== 构建完成 ==="
 echo "  .app (根目录):     ${APP_DIR}"
 echo "  .app (bundle路径): ${BUNDLE_OSX_DIR}/${APP_NAME}.app"
-echo "  .dmg:              ${DMG_NAME}"
+echo "  .dmg:              ${DMG_PATH}"
+if [ "$SIGN_MODE" = "release" ]; then
+    echo "  .dmg (notarized):  ${PROJECT_DIR}/${APP_NAME}-${VERSION}-notarized.dmg"
+    echo ""
+    echo "分发检查:"
+    spctl -a -vv "$DMG_PATH" || true
+    codesign -dv --verbose=4 "$APP_DIR" 2>&1 | grep -E 'Authority|TeamIdentifier|Signature' || true
+else
+    echo ""
+    echo "提示: 当前为 ad-hoc 签名，仅适合本机/内部测试。"
+    echo "      正式分发请使用: SIGN_MODE=release ./scripts/build_macos.sh --release"
+fi

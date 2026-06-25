@@ -92,35 +92,19 @@ jobs:
 
       - name: Package (macOS)
         if: matrix.platform == 'macos-universal'
+        env:
+          SIGN_MODE: adhoc
         run: |
           set -euo pipefail
           TAG="${{ steps.meta.outputs.tag }}"
-          VERSION="${{ steps.meta.outputs.version }}"
           APP_NAME="RustPad"
           mkdir -p dist
           APP_DIR="dist/${APP_NAME}.app"
-          mkdir -p "${APP_DIR}/Contents/MacOS" "${APP_DIR}/Contents/Resources"
-          cp target/release/rustpad "${APP_DIR}/Contents/MacOS/${APP_NAME}"
-          chmod +x "${APP_DIR}/Contents/MacOS/${APP_NAME}"
-          if [ -f assets/icon.icns ]; then
-            cp assets/icon.icns "${APP_DIR}/Contents/Resources/icon.icns"
-          fi
-          python3 -c "from pathlib import Path; v='${VERSION}'; icon='''    <key>CFBundleIconFile</key>\n    <string>icon</string>\n''' if Path('assets/icon.icns').exists() else ''; Path('${APP_DIR}/Contents/Info.plist').write_text(f'<?xml version=\"1.0\" encoding=\"UTF-8\"?><!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\"><plist version=\"1.0\"><dict><key>CFBundleExecutable</key><string>RustPad</string><key>CFBundleIdentifier</key><string>com.rustpad.editor</string><key>CFBundleName</key><string>RustPad</string><key>CFBundleDisplayName</key><string>RustPad</string><key>CFBundleShortVersionString</key><string>{v}</string><key>CFBundleVersion</key><string>{v}</string><key>CFBundlePackageType</key><string>APPL</string>{icon}<key>LSMinimumSystemVersion</key><string>10.15</string><key>NSHighResolutionCapable</key><true/></dict></plist>')"
-          codesign --force --deep --sign - "${APP_DIR}" || true
+          bash scripts/macos_package_app.sh "$APP_DIR" .
+          bash scripts/macos_codesign.sh "$APP_DIR" .
           (cd dist && zip -rq "rustpad-${TAG}-macos.app.zip" "${APP_NAME}.app")
           DMG_PATH="dist/rustpad-${TAG}-macos.dmg"
-          rm -f "${DMG_PATH}"
-          for attempt in 1 2 3; do
-            hdiutil detach "/Volumes/${APP_NAME}" -force 2>/dev/null || true
-            sleep 3
-            if hdiutil create -volname "${APP_NAME}" -srcfolder "${APP_DIR}" -ov -format UDZO "${DMG_PATH}"; then
-              break
-            fi
-            rm -f "${DMG_PATH}"
-            if [ "${attempt}" -eq 3 ]; then
-              echo "Warning: hdiutil failed after 3 attempts; macOS .app.zip will still be published."
-            fi
-          done
+          bash scripts/macos_create_dmg.sh "$APP_DIR" "$DMG_PATH"
           ls -lh dist/
 
       - name: Upload platform artifact

@@ -3,6 +3,8 @@
 #![allow(clippy::needless_update)]
 #![allow(clippy::inherent_to_string)]
 #![allow(clippy::needless_range_loop)]
+// Release Windows builds are GUI apps; avoid an extra console window that quits with the app.
+#![cfg_attr(all(not(debug_assertions), target_os = "windows"), windows_subsystem = "windows")]
 
 mod app;
 mod branding;

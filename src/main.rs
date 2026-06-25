@@ -7,6 +7,7 @@
 #![cfg_attr(all(not(debug_assertions), target_os = "windows"), windows_subsystem = "windows")]
 
 mod app;
+mod atomic_write;
 mod branding;
 mod config;
 mod diff;
@@ -97,12 +98,4 @@ fn main() -> eframe::Result {
     }
 
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn test_main_compiles() {
-        assert!(true);
-    }
 }

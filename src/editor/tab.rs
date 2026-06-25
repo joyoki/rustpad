@@ -80,7 +80,7 @@ impl Tab {
             let bytes = self
                 .encoding
                 .encode_text(&self.buffer.text(), self.buffer.line_ending());
-            std::fs::write(path, bytes)?;
+            crate::atomic_write::atomic_write(path, bytes)?;
             self.buffer.mark_clean();
             self.modified = false;
         }
@@ -95,7 +95,7 @@ impl Tab {
         let bytes = self
             .encoding
             .encode_text(&self.buffer.text(), self.buffer.line_ending());
-        std::fs::write(path, bytes)?;
+        crate::atomic_write::atomic_write(path, bytes)?;
         self.file_path = Some(path.clone());
         self.title = path
             .file_name()

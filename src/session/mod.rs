@@ -65,7 +65,7 @@ impl Session {
             std::fs::create_dir_all(parent)?;
         }
         let text = serde_json::to_string_pretty(self)?;
-        std::fs::write(path, text)?;
+        crate::atomic_write::atomic_write(path, text)?;
         Ok(())
     }
 
@@ -165,7 +165,7 @@ impl AutoSaveManager {
             .map(|f| f.to_string_lossy().to_string())
             .unwrap_or_else(|| "untitled".to_string());
         let recovery_path = self.crash_recovery_dir.join(format!("{}.recovery", filename));
-        std::fs::write(&recovery_path, content)?;
+        crate::atomic_write::atomic_write(&recovery_path, content)?;
         Ok(())
     }
 

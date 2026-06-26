@@ -33,16 +33,9 @@ impl DiffNavigator {
     }
 }
 
-/// Show the diff navigator panel.
-pub fn show(app: &mut RustpadApp, _ctx: &egui::Context) {
-    if !app.show_diff_view {
-        return;
-    }
-
-    if let Some(ref diff_result) = app.diff_result {
-        app.diff_navigator.total_hunks = diff_result.hunks.len();
-    }
-}
+/// Legacy hook; diff navigation lives in detached compare viewports.
+#[allow(dead_code)]
+pub fn show(_app: &mut RustpadApp, _ctx: &egui::Context) {}
 
 #[cfg(test)]
 mod tests {

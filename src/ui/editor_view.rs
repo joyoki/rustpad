@@ -87,13 +87,6 @@ struct SearchHighlightCtx<'a> {
 
 /// Render the main editor view.
 pub fn show(app: &mut RustpadApp, ctx: &egui::Context) {
-    // Hide the editor only when a diff is actually being shown. If diff mode is
-    // toggled on but no result is ready yet, keep rendering the editor so the
-    // central area never goes blank.
-    if app.show_diff_view && app.diff_result.is_some() {
-        return;
-    }
-
     let mut central_frame = egui::Frame::central_panel(&ctx.style());
     central_frame.inner_margin.top = 0.0;
 

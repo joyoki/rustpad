@@ -193,7 +193,7 @@ pub fn show(app: &mut RustpadApp, ctx: &egui::Context) {
                 t.tip_compare,
                 true,
             ) {
-                app.pending_compare_files = true;
+                app.open_compare_window();
             }
             let encoding_label = toolbar_label(t.tb_encoding, t.tb_label_encoding, compact);
             ui.menu_button(encoding_label, |ui| {

@@ -1,10 +1,18 @@
 use serde::{Deserialize, Serialize};
 
+pub mod binary_diff;
 pub mod engine;
 pub mod folder_diff;
+pub mod folder_sync;
 pub mod three_way;
 
+pub use binary_diff::{compare_binary_files, is_likely_binary, BinaryDiffResult};
 pub use engine::DiffEngine;
+pub use folder_diff::{
+    FileStatus, FolderCompareMode, FolderDiff, FolderDiffEntry, FolderDiffFilter,
+    FolderDiffOptions, FolderDiffResult,
+};
+pub use folder_sync::{sync_folder, SyncDirection, SyncScope};
 
 /// A single diff line with its change type.
 #[derive(Debug, Clone, Serialize, Deserialize)]

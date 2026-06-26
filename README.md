@@ -6,9 +6,9 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.75%2B-orange.svg)](https://www.rust-lang.org/)
 
-A modern, cross-platform code editor built with Rust, inspired by Notepad++ with integrated Beyond Compare-style file diff capabilities.
+A modern, cross-platform code editor built with Rust, inspired by Notepad++/Notepad-- with integrated Beyond Compare-style file diff capabilities.
 
-基于 Rust 的现代化跨平台文本/代码编辑器，灵感来自 Notepad++，并集成 Beyond Compare 风格的文件对比能力。
+基于 Rust 的现代化跨平台文本/代码编辑器，灵感来自 Notepad++/Notepad--，并集成 Beyond Compare 风格的文件对比能力。
 
 **Latest release / 最新版本:** [v0.1.5](https://github.com/joyoki/rustpad/releases/tag/v0.1.5)
 

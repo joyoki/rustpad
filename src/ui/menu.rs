@@ -48,15 +48,6 @@ fn show_in_window(app: &mut RustpadApp, ctx: &egui::Context) {
                     ui.close_menu();
                 }
                 ui.separator();
-                if ui.button(t.file_compare).clicked() {
-                    menu_actions::dispatch(app, "file.compare", ctx);
-                    ui.close_menu();
-                }
-                if ui.button(t.file_compare_current).clicked() {
-                    menu_actions::dispatch(app, "file.compare_current", ctx);
-                    ui.close_menu();
-                }
-                ui.separator();
                 if ui.button(t.file_exit).clicked() {
                     menu_actions::dispatch(app, "file.exit", ctx);
                     ui.close_menu();
@@ -177,11 +168,9 @@ fn show_in_window(app: &mut RustpadApp, ctx: &egui::Context) {
             });
             menu_actions::apply_encoding_action(app, enc_action);
 
+            crate::ui::compare_menu::show(app, ui, ctx);
+
             ui.menu_button(t.menu_tools, |ui| {
-                if ui.button(t.tools_compare).clicked() {
-                    menu_actions::dispatch(app, "tools.compare", ctx);
-                    ui.close_menu();
-                }
                 if ui.button(t.tools_macro).clicked() {
                     menu_actions::dispatch(app, "tools.macro", ctx);
                     ui.close_menu();

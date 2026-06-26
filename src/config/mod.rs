@@ -3,12 +3,23 @@ use std::path::PathBuf;
 
 pub mod theme;
 
+/// A pair of paths from a completed compare session.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ComparePair {
+    pub left: PathBuf,
+    pub right: PathBuf,
+}
+
 /// Global application configuration, persisted as TOML.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
     pub editor: EditorConfig,
     pub ui: UiConfig,
     pub recent_files: Vec<PathBuf>,
+    #[serde(default)]
+    pub recent_file_compares: Vec<ComparePair>,
+    #[serde(default)]
+    pub recent_folder_compares: Vec<ComparePair>,
     pub window: WindowConfig,
     pub auto_save: AutoSaveConfig,
 }
@@ -86,6 +97,8 @@ impl Default for AppConfig {
                 ui_language: default_ui_language(),
             },
             recent_files: Vec::new(),
+            recent_file_compares: Vec::new(),
+            recent_folder_compares: Vec::new(),
             window: WindowConfig {
                 width: 1280.0,
                 height: 720.0,
@@ -154,6 +167,22 @@ impl AppConfig {
         self.recent_files.retain(|p| p != &path);
         self.recent_files.insert(0, path);
         self.recent_files.truncate(20);
+    }
+
+    /// Record a successful file or binary compare (most-recent first, max 20).
+    pub fn add_recent_file_compare(&mut self, left: PathBuf, right: PathBuf) {
+        let pair = ComparePair { left, right };
+        self.recent_file_compares.retain(|p| p != &pair);
+        self.recent_file_compares.insert(0, pair);
+        self.recent_file_compares.truncate(20);
+    }
+
+    /// Record a successful folder compare (most-recent first, max 20).
+    pub fn add_recent_folder_compare(&mut self, left: PathBuf, right: PathBuf) {
+        let pair = ComparePair { left, right };
+        self.recent_folder_compares.retain(|p| p != &pair);
+        self.recent_folder_compares.insert(0, pair);
+        self.recent_folder_compares.truncate(20);
     }
 
     /// Update window configuration.
@@ -246,5 +275,17 @@ mod tests {
         let loaded: AppConfig = toml::from_str(&text).unwrap();
         assert_eq!(loaded.editor.font_size, 16.0);
         assert_eq!(loaded.recent_files.len(), 1);
+    }
+
+    #[test]
+    fn test_add_recent_file_compare() {
+        let mut cfg = AppConfig::default();
+        let left = PathBuf::from("/tmp/a.txt");
+        let right = PathBuf::from("/tmp/b.txt");
+        cfg.add_recent_file_compare(left.clone(), right.clone());
+        assert_eq!(cfg.recent_file_compares.len(), 1);
+        assert_eq!(cfg.recent_file_compares[0].left, left);
+        cfg.add_recent_file_compare(left, right);
+        assert_eq!(cfg.recent_file_compares.len(), 1);
     }
 }

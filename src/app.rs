@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use crate::config::AppConfig;
 use crate::config::theme::ThemeManager;
-use crate::diff::{DiffAlgorithm, DiffOptions, DiffResult, DiffEngine};
+use crate::diff::is_likely_binary;
 use crate::editor::{Cursor, EncodingProfile, Selection, TabManager};
 use crate::highlight::Highlighter;
 use crate::search::{SearchEngine, SearchOptions};
@@ -47,14 +47,11 @@ pub struct SearchResultBatch {
     pub collapsed_docs: HashSet<String>,
 }
 use crate::session::{AutoSaveManager, Session};
-use crate::ui::diff_navigator::DiffNavigator;
+use crate::ui::compare_session::CompareWindowManager;
 use crate::ui::file_tree::FileTree;
 use crate::ui::keybindings::{Command, KeyBindings};
 use crate::ui::minimap::Minimap;
 use crate::ui::sidebar::SidebarTab;
-
-/// Left/right source line ranges covered by a diff change block.
-type LineRangePair = (std::ops::Range<usize>, std::ops::Range<usize>);
 
 /// Command palette state for quick actions.
 #[derive(Debug, Default)]
@@ -109,7 +106,6 @@ pub struct RustpadApp {
     pub show_sidebar: bool,
     pub show_search: bool,
     pub show_replace: bool,
-    pub show_diff_view: bool,
     pub show_about: bool,
     pub show_preferences: bool,
     pub show_keybindings: bool,
@@ -154,26 +150,11 @@ pub struct RustpadApp {
     pub cross_file_filter: String,
     pub cross_file_results: Vec<(PathBuf, usize, String)>,
 
-    // Diff state
-    pub diff_left_path: Option<PathBuf>,
-    pub diff_right_path: Option<PathBuf>,
-    pub diff_algorithm: DiffAlgorithm,
-    pub diff_result: Option<DiffResult>,
-    pub diff_ignore_whitespace: bool,
-    pub diff_ignore_case: bool,
-    pub diff_navigator: DiffNavigator,
-    /// In-memory copies of both sides so merges can be applied and saved.
-    pub diff_left_text: String,
-    pub diff_right_text: String,
-    pub diff_left_dirty: bool,
-    pub diff_right_dirty: bool,
-    /// Index of the currently focused change block (for prev/next navigation).
-    pub diff_current_change: usize,
-    /// One-shot request to scroll the diff view to a given row.
-    pub diff_scroll_to_row: Option<usize>,
-    /// Pending diff navigation requests (set from keyboard, applied after UI).
-    pub pending_diff_next: bool,
-    pub pending_diff_prev: bool,
+    // Detached compare windows (notepad-- CompareWin / CompareDirs / CompareHexWin)
+    pub compare_mgr: CompareWindowManager,
+    /// First side picked via tab context menu before opening a compare window.
+    compare_pick_left: Option<PathBuf>,
+    compare_pick_right: Option<PathBuf>,
 
     // Workspace
     pub workspace_root: Option<PathBuf>,
@@ -225,6 +206,8 @@ pub struct RustpadApp {
     pub pending_diff: bool,
     pub pending_compare_files: bool,
     pub pending_compare_current: bool,
+    pub pending_compare_dirs: bool,
+    pub pending_compare_binary: bool,
     pub pending_undo: bool,
     pub pending_redo: bool,
     pub pending_select_all: bool,
@@ -278,6 +261,8 @@ pub struct RustpadApp {
     pub macos_menu_rx: Option<std::sync::mpsc::Receiver<muda::MenuEvent>>,
     #[cfg(target_os = "macos")]
     pub macos_encoding_open_checks: Vec<(EncodingProfile, muda::CheckMenuItem)>,
+    #[cfg(target_os = "macos")]
+    pub macos_compare_history: Option<crate::platform::macos_menu::MacosCompareHistory>,
 }
 
 impl RustpadApp {
@@ -330,7 +315,6 @@ impl RustpadApp {
             show_sidebar: true,
             show_search: false,
             show_replace: false,
-            show_diff_view: false,
             show_about: false,
             show_preferences: false,
             show_keybindings: false,
@@ -363,21 +347,9 @@ impl RustpadApp {
             cross_file_directory: String::new(),
             cross_file_filter: "*.rs".to_string(),
             cross_file_results: Vec::new(),
-            diff_left_path: None,
-            diff_right_path: None,
-            diff_algorithm: DiffAlgorithm::default(),
-            diff_result: None,
-            diff_left_text: String::new(),
-            diff_right_text: String::new(),
-            diff_left_dirty: false,
-            diff_right_dirty: false,
-            diff_current_change: 0,
-            diff_scroll_to_row: None,
-            pending_diff_next: false,
-            pending_diff_prev: false,
-            diff_ignore_whitespace: false,
-            diff_ignore_case: false,
-            diff_navigator: DiffNavigator::new(),
+            compare_mgr: CompareWindowManager::default(),
+            compare_pick_left: None,
+            compare_pick_right: None,
             workspace_root,
             file_tree: FileTree::new(),
             minimap: Minimap::new(),
@@ -406,6 +378,8 @@ impl RustpadApp {
             pending_diff: false,
             pending_compare_files: false,
             pending_compare_current: false,
+            pending_compare_dirs: false,
+            pending_compare_binary: false,
             pending_undo: false,
             pending_redo: false,
             pending_select_all: false,
@@ -443,6 +417,8 @@ impl RustpadApp {
             macos_menu_rx: None,
             #[cfg(target_os = "macos")]
             macos_encoding_open_checks: Vec::new(),
+            #[cfg(target_os = "macos")]
+            macos_compare_history: None,
         };
 
         app.apply_theme(&cc.egui_ctx);
@@ -542,70 +518,64 @@ impl RustpadApp {
         }
     }
 
-    /// Recompute the diff from the in-memory left/right texts.
-    pub fn recompute_diff(&mut self) {
-        let engine = DiffEngine::new()
-            .with_algorithm(self.diff_algorithm)
-            .with_options(DiffOptions {
-                ignore_whitespace: self.diff_ignore_whitespace,
-                ignore_case: self.diff_ignore_case,
-                ignore_line_endings: true,
-            });
-
-        let result = engine.diff(&self.diff_left_text, &self.diff_right_text);
-        self.diff_navigator.total_hunks = result.hunks.len();
-        if self.diff_current_change >= result.change_count() {
-            self.diff_current_change = 0;
+    /// Apply theme visuals to a secondary viewport (compare windows).
+    pub fn apply_theme_to_context(&self, ctx: &egui::Context) {
+        let normalized = self.config.ui.theme.to_lowercase();
+        if normalized == "dark" {
+            ctx.set_visuals(egui::Visuals::dark());
+        } else {
+            ctx.set_visuals(egui::Visuals::light());
         }
-        self.diff_result = Some(result);
     }
 
-    /// Load both sides' text from disk into memory and compute the first diff.
-    fn begin_comparison(&mut self, left: PathBuf, right: PathBuf) {
-        let left_text = match std::fs::read_to_string(&left) {
-            Ok(t) => t,
-            Err(e) => {
-                log::error!("Failed to read {}: {}", left.display(), e);
-                return;
-            }
-        };
-        let right_text = match std::fs::read_to_string(&right) {
-            Ok(t) => t,
-            Err(e) => {
-                log::error!("Failed to read {}: {}", right.display(), e);
-                return;
-            }
-        };
-
-        self.diff_left_path = Some(left);
-        self.diff_right_path = Some(right);
-        self.diff_left_text = left_text;
-        self.diff_right_text = right_text;
-        self.diff_left_dirty = false;
-        self.diff_right_dirty = false;
-        self.diff_current_change = 0;
-        self.diff_scroll_to_row = None;
-        self.recompute_diff();
-        self.show_diff_view = self.diff_result.is_some();
+    /// Open a detached file compare window (pick paths inside the window).
+    pub fn open_compare_window(&mut self) {
+        self.compare_mgr.new_file_window();
     }
 
-    /// Prompt for two files, compute the diff and open the comparison view.
-    /// If the user cancels either picker, nothing changes (avoids a blank view).
+    pub fn open_folder_compare_window(&mut self) {
+        self.compare_mgr.new_folder_window();
+    }
+
+    pub fn open_compare_from_history(&mut self, pair: crate::config::ComparePair) {
+        self.compare_mgr.open_with_paths(pair.left, pair.right);
+    }
+
+    pub fn record_compare_history(
+        &mut self,
+        left: std::path::PathBuf,
+        right: std::path::PathBuf,
+        mode: crate::ui::compare_session::CompareMode,
+    ) {
+        use crate::ui::compare_session::CompareMode;
+        match mode {
+            CompareMode::Text | CompareMode::Binary => {
+                self.config.add_recent_file_compare(left, right);
+            }
+            CompareMode::Folder => {
+                self.config.add_recent_folder_compare(left, right);
+            }
+            CompareMode::None => return,
+        }
+        let _ = self.config.save();
+        #[cfg(target_os = "macos")]
+        crate::platform::macos_menu::sync_compare_history(self);
+    }
+
+    fn open_file_compare(&mut self, left: PathBuf, right: PathBuf) {
+        self.compare_mgr.open_with_paths(left, right);
+    }
+
+    fn open_binary_compare(&mut self, left: PathBuf, right: PathBuf) {
+        self.compare_mgr.open_with_paths(left, right);
+    }
+
+    /// Open file compare window (notepad-- style: window first, then pick files inside).
     pub fn compare_files_dialog(&mut self) {
-        let left = rfd::FileDialog::new()
-            .set_title("Select the first (left) file to compare")
-            .pick_file();
-        let Some(left) = left else { return };
-
-        let right = rfd::FileDialog::new()
-            .set_title("Select the second (right) file to compare")
-            .pick_file();
-        let Some(right) = right else { return };
-
-        self.begin_comparison(left, right);
+        self.open_compare_window();
     }
 
-    /// Compare the current file against another file chosen by the user.
+    /// Open compare window with the active tab preloaded on the left side.
     pub fn compare_current_with_dialog(&mut self) {
         let current = self.tab_manager.active().file_path.clone();
         let Some(current) = current else {
@@ -613,162 +583,23 @@ impl RustpadApp {
             return;
         };
 
-        let other = rfd::FileDialog::new()
-            .set_title("Select a file to compare with the current file")
-            .pick_file();
-        let Some(other) = other else { return };
-
-        self.begin_comparison(current, other);
-    }
-
-    /// Replace the left side with a newly chosen file and re-diff.
-    pub fn diff_open_left(&mut self, path: PathBuf) {
-        match std::fs::read_to_string(&path) {
-            Ok(text) => {
-                self.diff_left_path = Some(path);
-                self.diff_left_text = text;
-                self.diff_left_dirty = false;
-                self.recompute_diff();
-            }
-            Err(e) => log::error!("Failed to read {}: {}", path.display(), e),
+        let id = self.compare_mgr.new_file_window();
+        if let Some(session) = self.compare_mgr.session_mut(id) {
+            session.left_path_text = current.display().to_string();
         }
     }
 
-    /// Replace the right side with a newly chosen file and re-diff.
-    pub fn diff_open_right(&mut self, path: PathBuf) {
-        match std::fs::read_to_string(&path) {
-            Ok(text) => {
-                self.diff_right_path = Some(path);
-                self.diff_right_text = text;
-                self.diff_right_dirty = false;
-                self.recompute_diff();
-            }
-            Err(e) => log::error!("Failed to read {}: {}", path.display(), e),
-        }
+    /// Open folder compare window (pick folders inside the window).
+    pub fn compare_dirs_dialog(&mut self) {
+        self.open_folder_compare_window();
     }
 
-    /// Swap the two sides and re-diff.
-    pub fn diff_swap(&mut self) {
-        std::mem::swap(&mut self.diff_left_path, &mut self.diff_right_path);
-        std::mem::swap(&mut self.diff_left_text, &mut self.diff_right_text);
-        std::mem::swap(&mut self.diff_left_dirty, &mut self.diff_right_dirty);
-        self.recompute_diff();
-    }
-
-    /// Jump to the next change block and scroll to it.
-    pub fn diff_next_change(&mut self) {
-        let Some(result) = &self.diff_result else { return };
-        let count = result.change_count();
-        if count == 0 {
-            return;
-        }
-        self.diff_current_change = (self.diff_current_change + 1) % count;
-        self.diff_scroll_to_row = result.change_starts.get(self.diff_current_change).copied();
-    }
-
-    /// Jump to the previous change block and scroll to it.
-    pub fn diff_prev_change(&mut self) {
-        let Some(result) = &self.diff_result else { return };
-        let count = result.change_count();
-        if count == 0 {
-            return;
-        }
-        self.diff_current_change = (self.diff_current_change + count - 1) % count;
-        self.diff_scroll_to_row = result.change_starts.get(self.diff_current_change).copied();
-    }
-
-    /// Collect the left/right source line ranges covered by a change block.
-    /// Returns `(left_range, right_range)` as half-open `[start, end)` indices
-    /// into the corresponding side's line vector.
-    fn change_block_ranges(&self, change_id: usize) -> Option<LineRangePair> {
-        let result = self.diff_result.as_ref()?;
-        let rows: Vec<&crate::diff::DiffRow> = result
-            .rows
-            .iter()
-            .filter(|r| r.change_id == Some(change_id))
-            .collect();
-        if rows.is_empty() {
-            return None;
-        }
-
-        let left_lines: Vec<usize> = rows.iter().filter_map(|r| r.left_line).collect();
-        let right_lines: Vec<usize> = rows.iter().filter_map(|r| r.right_line).collect();
-
-        let left_range = if let (Some(&s), Some(&e)) = (left_lines.iter().min(), left_lines.iter().max()) {
-            s..e + 1
-        } else {
-            // Pure insert on the right: empty range at the left insertion cursor.
-            let at = rows[0].left_at;
-            at..at
-        };
-        let right_range = if let (Some(&s), Some(&e)) = (right_lines.iter().min(), right_lines.iter().max()) {
-            s..e + 1
-        } else {
-            let at = rows[0].right_at;
-            at..at
-        };
-
-        Some((left_range, right_range))
-    }
-
-    fn split_lines(text: &str) -> Vec<String> {
-        text.lines().map(|l| l.to_string()).collect()
-    }
-
-    /// Merge a change block from the left side into the right side.
-    pub fn diff_merge_to_right(&mut self, change_id: usize) {
-        let Some((left_range, right_range)) = self.change_block_ranges(change_id) else { return };
-        let left_lines = Self::split_lines(&self.diff_left_text);
-        let mut right_lines = Self::split_lines(&self.diff_right_text);
-        let replacement: Vec<String> = left_lines[left_range].to_vec();
-        let end = right_range.end.min(right_lines.len());
-        let start = right_range.start.min(end);
-        right_lines.splice(start..end, replacement);
-        self.diff_right_text = right_lines.join("\n");
-        self.diff_right_dirty = true;
-        self.recompute_diff();
-    }
-
-    /// Merge a change block from the right side into the left side.
-    pub fn diff_merge_to_left(&mut self, change_id: usize) {
-        let Some((left_range, right_range)) = self.change_block_ranges(change_id) else { return };
-        let right_lines = Self::split_lines(&self.diff_right_text);
-        let mut left_lines = Self::split_lines(&self.diff_left_text);
-        let replacement: Vec<String> = right_lines[right_range].to_vec();
-        let end = left_range.end.min(left_lines.len());
-        let start = left_range.start.min(end);
-        left_lines.splice(start..end, replacement);
-        self.diff_left_text = left_lines.join("\n");
-        self.diff_left_dirty = true;
-        self.recompute_diff();
-    }
-
-    /// Write the (possibly merged) left text back to its file.
-    pub fn diff_save_left(&mut self) {
-        if let Some(path) = self.diff_left_path.clone() {
-            let text = self.diff_left_text.clone();
-            let op = self.tr().err_op_save;
-            if self.write_file_with_feedback(&path, &text, op) {
-                self.diff_left_dirty = false;
-                self.sync_open_tab_with_disk(&path, &text);
-            }
-        }
-    }
-
-    /// Write the (possibly merged) right text back to its file.
-    pub fn diff_save_right(&mut self) {
-        if let Some(path) = self.diff_right_path.clone() {
-            let text = self.diff_right_text.clone();
-            let op = self.tr().err_op_save;
-            if self.write_file_with_feedback(&path, &text, op) {
-                self.diff_right_dirty = false;
-                self.sync_open_tab_with_disk(&path, &text);
-            }
-        }
+    pub fn compare_binary_files_dialog(&mut self) {
+        self.open_compare_window();
     }
 
     /// If the given file is open in a tab, refresh its buffer from disk text.
-    fn sync_open_tab_with_disk(&mut self, path: &std::path::Path, text: &str) {
+    pub fn sync_open_tab_with_disk(&mut self, path: &std::path::Path, text: &str) {
         for tab in self.tab_manager.tabs_mut() {
             if tab.file_path.as_deref() == Some(path) {
                 tab.buffer = crate::editor::buffer::TextBuffer::from_str(text);
@@ -776,50 +607,6 @@ impl RustpadApp {
             }
         }
         self.highlighter.invalidate_all();
-    }
-
-    /// Leave diff mode and clear comparison state.
-    pub fn close_diff_view(&mut self) {
-        self.show_diff_view = false;
-    }
-
-    /// Export diff report as HTML.
-    pub fn export_diff_report(&mut self) {
-        if let Some(ref result) = self.diff_result {
-            let mut html = String::from("<!DOCTYPE html><html><head><style>");
-            html.push_str("body { font-family: monospace; }");
-            html.push_str(".equal { background: #fff; }");
-            html.push_str(".insert { background: #e4ffe4; }");
-            html.push_str(".delete { background: #ffe4e4; }");
-            html.push_str(".replace { background: #fffbe4; }");
-            html.push_str("</style></head><body>");
-            html.push_str("<h1>Diff Report</h1>");
-            html.push_str("<table>");
-
-            for line in &result.lines {
-                let class = match line.tag {
-                    crate::diff::DiffTag::Equal => "equal",
-                    crate::diff::DiffTag::Insert => "insert",
-                    crate::diff::DiffTag::Delete => "delete",
-                    crate::diff::DiffTag::Replace => "replace",
-                };
-                html.push_str(&format!(
-                    "<tr class=\"{}\"><td>{}</td></tr>",
-                    class,
-                    crate::editor::context_actions::html_escape(&line.content),
-                ));
-            }
-
-            html.push_str("</table></body></html>");
-
-            if let Some(path) = rfd::FileDialog::new()
-                .add_filter("HTML", &["html"])
-                .save_file()
-            {
-                let op = self.tr().err_op_export;
-                let _ = self.write_file_with_feedback(path, html, op);
-            }
-        }
     }
 
     /// Update status bar with current tab information.
@@ -884,6 +671,33 @@ impl RustpadApp {
                 .filter_map(|file| file.path.clone())
                 .collect()
         });
+        if paths.is_empty() {
+            return;
+        }
+
+        // When compare windows are open, route drops to the active compare session
+        // instead of opening files in the editor (drops may land on the parent ctx).
+        if let Some(id) = self.compare_mgr.sessions.last().map(|s| s.id) {
+            let pointer = ctx.pointer_latest_pos();
+            for (index, path) in paths.into_iter().enumerate() {
+                let to_right = if let Some(session) = self.compare_mgr.session(id) {
+                    if let Some(p) = pointer {
+                        session.drop_side_at_pointer(p)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+                .unwrap_or(index % 2 == 1);
+                if let Some(session) = self.compare_mgr.session_mut(id) {
+                    session.apply_dropped_path(path, to_right);
+                }
+            }
+            ctx.input_mut(|i| i.raw.dropped_files.clear());
+            return;
+        }
+
         for path in paths {
             if path.is_dir() {
                 self.open_workspace_folder(path);
@@ -893,6 +707,7 @@ impl RustpadApp {
                 log::warn!("Ignored dropped path: {:?}", path);
             }
         }
+        ctx.input_mut(|i| i.raw.dropped_files.clear());
     }
 
     /// Open a folder as the workspace (file explorer sidebar).
@@ -1445,21 +1260,27 @@ impl RustpadApp {
             return;
         };
         self.tab_manager.set_active(tab_index);
-        let mut dialog = rfd::FileDialog::new().set_title(
-            if crate::i18n::UiLanguage::parse(&self.config.ui.ui_language)
-                == crate::i18n::UiLanguage::Zh
-            {
-                "选择右边对比文件"
-            } else {
-                "Select the right file to compare"
-            },
-        );
-        if let Some(parent) = left.parent() {
-            dialog = dialog.set_directory(parent);
+
+        if let Some(right) = self.compare_pick_right.take() {
+            if left != right {
+                if is_likely_binary(&left) || is_likely_binary(&right) {
+                    self.open_binary_compare(left, right);
+                } else {
+                    self.open_file_compare(left, right);
+                }
+            }
+            self.compare_pick_left = None;
+            return;
         }
-        if let Some(right) = dialog.pick_file() {
-            self.begin_comparison(left, right);
-        }
+
+        self.compare_pick_left = Some(left);
+        self.transient_message = if crate::i18n::UiLanguage::parse(&self.config.ui.ui_language)
+            == crate::i18n::UiLanguage::Zh
+        {
+            "已选为左侧对比文件，请再选右侧文件".to_string()
+        } else {
+            "Selected as left compare file; pick the right file".to_string()
+        };
     }
 
     pub fn compare_tab_as_right(&mut self, tab_index: usize) {
@@ -1467,21 +1288,27 @@ impl RustpadApp {
             return;
         };
         self.tab_manager.set_active(tab_index);
-        let mut dialog = rfd::FileDialog::new().set_title(
-            if crate::i18n::UiLanguage::parse(&self.config.ui.ui_language)
-                == crate::i18n::UiLanguage::Zh
-            {
-                "选择左边对比文件"
-            } else {
-                "Select the left file to compare"
-            },
-        );
-        if let Some(parent) = right.parent() {
-            dialog = dialog.set_directory(parent);
-        };
-        if let Some(left) = dialog.pick_file() {
-            self.begin_comparison(left, right);
+
+        if let Some(left) = self.compare_pick_left.take() {
+            if left != right {
+                if is_likely_binary(&left) || is_likely_binary(&right) {
+                    self.open_binary_compare(left, right);
+                } else {
+                    self.open_file_compare(left, right);
+                }
+            }
+            self.compare_pick_right = None;
+            return;
         }
+
+        self.compare_pick_right = Some(right);
+        self.transient_message = if crate::i18n::UiLanguage::parse(&self.config.ui.ui_language)
+            == crate::i18n::UiLanguage::Zh
+        {
+            "已选为右侧对比文件，请再选左侧文件".to_string()
+        } else {
+            "Selected as right compare file; pick the left file".to_string()
+        };
     }
 
     /// Cut selected text to clipboard.
@@ -2591,15 +2418,7 @@ impl RustpadApp {
         }
         if self.pending_diff {
             self.pending_diff = false;
-            self.pending_compare_files = true;
-        }
-        if self.pending_diff_next {
-            self.pending_diff_next = false;
-            self.diff_next_change();
-        }
-        if self.pending_diff_prev {
-            self.pending_diff_prev = false;
-            self.diff_prev_change();
+            self.open_compare_window();
         }
         if self.pending_undo {
             self.pending_undo = false;
@@ -2667,17 +2486,6 @@ impl RustpadApp {
 
     /// Collect keyboard shortcut flags using the keybinding system.
     fn collect_shortcuts(&mut self, ctx: &egui::Context) {
-        // Diff navigation (F7 prev / F8 next), only while comparing.
-        if self.show_diff_view {
-            ctx.input(|i| {
-                if i.key_pressed(egui::Key::F8) {
-                    self.pending_diff_next = true;
-                }
-                if i.key_pressed(egui::Key::F7) {
-                    self.pending_diff_prev = true;
-                }
-            });
-        }
         ctx.input(|i| {
             if i.key_pressed(egui::Key::F3) {
                 self.pending_find_next = true;
@@ -2821,7 +2629,6 @@ impl eframe::App for RustpadApp {
 
         crate::ui::menu::show(self, ctx);
         crate::ui::toolbar::show(self, ctx);
-        crate::ui::diff_toolbar::show(self, ctx);
         crate::ui::tab_bar::show(self, ctx);
         crate::ui::sidebar::show(self, ctx);
         // Bottom panels must be registered before the central editor panel so the
@@ -2832,8 +2639,8 @@ impl eframe::App for RustpadApp {
         // Search dialog must render after the editor so it stays on top and keeps focus.
         crate::ui::search_panel::show(self, ctx);
         crate::ui::search_panel::show_cross_file_search(self, ctx);
-        crate::ui::diff_view::show(self, ctx);
         crate::ui::dialogs::show_non_blocking(self, ctx);
+        crate::ui::compare_viewport::show_all(self, ctx);
 
         // Blocking save prompts render last, on top of the bright UI.
         if self.show_quit_unsaved_dialog {
@@ -2869,6 +2676,16 @@ impl eframe::App for RustpadApp {
         if self.pending_compare_current {
             self.pending_compare_current = false;
             self.compare_current_with_dialog();
+        }
+
+        if self.pending_compare_dirs {
+            self.pending_compare_dirs = false;
+            self.compare_dirs_dialog();
+        }
+
+        if self.pending_compare_binary {
+            self.pending_compare_binary = false;
+            self.compare_binary_files_dialog();
         }
 
         if self.pending_exit {

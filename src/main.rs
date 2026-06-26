@@ -83,11 +83,16 @@ fn main() -> eframe::Result {
                 let t = app.tr();
                 let current_encoding = app.tab_manager.active().encoding;
                 let has_open_file = app.tab_manager.active().file_path.is_some();
-                let handles =
-                    platform::macos_menu::install(t, current_encoding, has_open_file);
+                let handles = platform::macos_menu::install(
+                    t,
+                    current_encoding,
+                    has_open_file,
+                    &app.config,
+                );
                 app.macos_menu = Some(handles.menu);
                 app.macos_menu_rx = Some(handles.rx);
                 app.macos_encoding_open_checks = handles.encoding_open_checks;
+                app.macos_compare_history = Some(handles.compare_history);
                 cc.egui_ctx.request_repaint();
             }
             Ok(Box::new(app) as Box<dyn eframe::App>)

@@ -28,7 +28,11 @@ pub fn dispatch(app: &mut RustpadApp, id: &str, ctx: &egui::Context) {
         "file.save_as" => app.save_as_dialog(),
         "file.save_all" => app.save_all_tabs(),
         "file.close_tab" => app.close_current_tab(),
-        "file.compare" => app.pending_compare_files = true,
+        "compare.files" | "file.compare" | "tools.compare" | "file.compare_binary"
+        | "tools.compare_binary" => app.pending_compare_files = true,
+        "compare.folders" | "file.compare_dirs" | "tools.compare_dirs" => {
+            app.pending_compare_dirs = true;
+        }
         "file.compare_current" => app.pending_compare_current = true,
 
         "edit.undo" => {
@@ -56,8 +60,26 @@ pub fn dispatch(app: &mut RustpadApp, id: &str, ctx: &egui::Context) {
 
         "enc.batch" => app.show_batch_encoding = true,
 
-        "tools.compare" => app.pending_compare_files = true,
         "tools.macro" => app.toggle_macro_recording(),
+
+        id if id.starts_with("compare.history.file.") => {
+            if let Some(rest) = id.strip_prefix("compare.history.file.") {
+                if let Ok(index) = rest.parse::<usize>() {
+                    if let Some(pair) = app.config.recent_file_compares.get(index).cloned() {
+                        app.open_compare_from_history(pair);
+                    }
+                }
+            }
+        }
+        id if id.starts_with("compare.history.folder.") => {
+            if let Some(rest) = id.strip_prefix("compare.history.folder.") {
+                if let Ok(index) = rest.parse::<usize>() {
+                    if let Some(pair) = app.config.recent_folder_compares.get(index).cloned() {
+                        app.open_compare_from_history(pair);
+                    }
+                }
+            }
+        }
 
         id if id.starts_with("view.lang.") => {
             if let Some(rest) = id.strip_prefix("view.lang.") {

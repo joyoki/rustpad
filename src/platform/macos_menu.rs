@@ -12,9 +12,11 @@ use muda::{
 };
 
 use crate::app::RustpadApp;
+use crate::config::{AppConfig, ComparePair};
 use crate::editor::EncodingProfile;
 use crate::highlight::MENU_LANGUAGES;
 use crate::i18n::Locale;
+use crate::ui::compare_menu::{self, HISTORY_MAX};
 use crate::ui::menu_actions::MENU_FONT_SIZES;
 
 fn cmd_accel(code: Code) -> Accelerator {
@@ -34,11 +36,18 @@ fn item(id: &str, text: &str, accel: Option<Accelerator>) -> MenuItem {
     MenuItem::with_id(id, menu_label(text), true, accel)
 }
 
+/// Handles for compare history menu slots (updated when history changes).
+pub struct MacosCompareHistory {
+    pub file_items: Vec<MenuItem>,
+    pub folder_items: Vec<MenuItem>,
+}
+
 /// Handles for native menu items that must stay in sync with editor state.
 pub struct MacosMenuInstall {
     pub menu: Menu,
     pub rx: Receiver<MenuEvent>,
     pub encoding_open_checks: Vec<(EncodingProfile, CheckMenuItem)>,
+    pub compare_history: MacosCompareHistory,
 }
 
 fn encoding_open_check(
@@ -61,6 +70,7 @@ pub fn install(
     t: &Locale,
     current_encoding: EncodingProfile,
     has_open_file: bool,
+    config: &AppConfig,
 ) -> MacosMenuInstall {
     let (tx, rx) = std::sync::mpsc::channel();
     MenuEvent::set_event_handler(Some(move |event| {
@@ -69,12 +79,18 @@ pub fn install(
 
     let menu = Menu::new();
     let mut encoding_open_checks = Vec::new();
+    let mut compare_history = MacosCompareHistory {
+        file_items: Vec::new(),
+        folder_items: Vec::new(),
+    };
     if let Err(err) = build_menu(
         &menu,
         t,
         current_encoding,
         has_open_file,
+        config,
         &mut encoding_open_checks,
+        &mut compare_history,
     ) {
         log::error!("Failed to build macOS menu bar: {err}");
     }
@@ -83,6 +99,7 @@ pub fn install(
         menu,
         rx,
         encoding_open_checks,
+        compare_history,
     }
 }
 
@@ -91,7 +108,9 @@ fn build_menu(
     t: &Locale,
     current_encoding: EncodingProfile,
     has_open_file: bool,
+    config: &AppConfig,
     encoding_open_checks: &mut Vec<(EncodingProfile, CheckMenuItem)>,
+    compare_history: &mut MacosCompareHistory,
 ) -> muda::Result<()> {
     // macOS application menu (standard); does not replace File/Settings/Help entries.
     let app_menu = Submenu::with_items(
@@ -127,9 +146,6 @@ fn build_menu(
             &item("file.save_all", t.file_save_all, None),
             &PredefinedMenuItem::separator(),
             &item("file.close_tab", t.file_close_tab, Some(cmd_accel(Code::KeyW))),
-            &PredefinedMenuItem::separator(),
-            &item("file.compare", t.file_compare, None),
-            &item("file.compare_current", t.file_compare_current, None),
             &PredefinedMenuItem::separator(),
             &item("file.exit", t.file_exit, Some(cmd_accel(Code::KeyQ))),
         ],
@@ -254,13 +270,14 @@ fn build_menu(
     ))?;
     menu.append(&encoding_menu)?;
 
+    let compare_menu = build_compare_menu(t, compare_history)?;
+    menu.append(&compare_menu)?;
+    sync_compare_history_items(compare_history, config, t);
+
     let tools_menu = Submenu::with_items(
         t.menu_tools,
         true,
-        &[
-            &item("tools.compare", t.tools_compare, None),
-            &item("tools.macro", t.tools_macro, None),
-        ],
+        &[&item("tools.macro", t.tools_macro, None)],
     )?;
     menu.append(&tools_menu)?;
 
@@ -282,6 +299,93 @@ fn build_menu(
     menu.append(&help_menu)?;
 
     Ok(())
+}
+
+fn build_compare_menu(
+    t: &Locale,
+    compare_history: &mut MacosCompareHistory,
+) -> muda::Result<Submenu> {
+    let compare_menu = Submenu::new(t.menu_compare, true);
+    compare_menu.append(&item(
+        "compare.files",
+        t.cmp_menu_files,
+        Some(cmd_accel(Code::KeyD)),
+    ))?;
+    compare_menu.append(&item("compare.folders", t.cmp_menu_folders, None))?;
+
+    let recent_menu = Submenu::new(t.cmp_recent, true);
+
+    let folder_hist_menu = Submenu::new(t.cmp_history_folders, true);
+    append_history_slots(
+        &folder_hist_menu,
+        "compare.history.folder.",
+        &mut compare_history.folder_items,
+    )?;
+    recent_menu.append(&folder_hist_menu)?;
+
+    let file_hist_menu = Submenu::new(t.cmp_history_files, true);
+    append_history_slots(
+        &file_hist_menu,
+        "compare.history.file.",
+        &mut compare_history.file_items,
+    )?;
+    recent_menu.append(&file_hist_menu)?;
+
+    compare_menu.append(&recent_menu)?;
+    Ok(compare_menu)
+}
+
+fn append_history_slots(
+    submenu: &Submenu,
+    id_prefix: &str,
+    items: &mut Vec<MenuItem>,
+) -> muda::Result<()> {
+    for index in 0..HISTORY_MAX {
+        let item = MenuItem::with_id(format!("{id_prefix}{index}"), "", false, None);
+        submenu.append(&item)?;
+        items.push(item);
+    }
+    Ok(())
+}
+
+fn sync_compare_history_items(
+    handles: &MacosCompareHistory,
+    config: &AppConfig,
+    t: &Locale,
+) {
+    sync_history_slot(
+        &handles.folder_items,
+        &config.recent_folder_compares,
+        t.cmp_history_empty,
+    );
+    sync_history_slot(
+        &handles.file_items,
+        &config.recent_file_compares,
+        t.cmp_history_empty,
+    );
+}
+
+fn sync_history_slot(items: &[MenuItem], history: &[ComparePair], empty_label: &str) {
+    for (index, item) in items.iter().enumerate() {
+        if let Some(pair) = history.get(index) {
+            item.set_text(compare_menu::history_label(pair));
+            item.set_enabled(true);
+        } else if index == 0 && history.is_empty() {
+            item.set_text(empty_label);
+            item.set_enabled(false);
+        } else {
+            item.set_text("");
+            item.set_enabled(false);
+        }
+    }
+}
+
+/// Keep compare history menu items aligned with persisted config.
+pub fn sync_compare_history(app: &RustpadApp) {
+    let Some(handles) = app.macos_compare_history.as_ref() else {
+        return;
+    };
+    sync_compare_history_items(handles, &app.config, app.tr());
 }
 
 /// Keep native "open with encoding" checks aligned with the active tab.

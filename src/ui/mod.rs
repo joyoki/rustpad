@@ -1,7 +1,15 @@
 pub mod command_palette;
+pub mod compare_menu;
+pub mod compare_session;
+pub mod compare_viewport;
+pub mod compare_window;
 pub mod diff_navigator;
+pub mod binary_diff_toolbar;
+pub mod binary_diff_view;
 pub mod diff_toolbar;
 pub mod diff_view;
+pub mod folder_diff_toolbar;
+pub mod folder_diff_view;
 pub mod dialogs;
 pub mod editor_context_menu;
 pub mod editor_view;

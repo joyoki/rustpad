@@ -2,13 +2,31 @@
 
 [English](#english) · [中文](#中文)
 
+[![Release](https://img.shields.io/github/v/release/joyoki/rustpad)](https://github.com/joyoki/rustpad/releases)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Rust](https://img.shields.io/badge/rust-1.75%2B-orange.svg)](https://www.rust-lang.org/)
+
 A modern, cross-platform code editor built with Rust, inspired by Notepad++ with integrated Beyond Compare-style file diff capabilities.
 
 基于 Rust 的现代化跨平台文本/代码编辑器，灵感来自 Notepad++，并集成 Beyond Compare 风格的文件对比能力。
 
+**Latest release / 最新版本:** [v0.1.5](https://github.com/joyoki/rustpad/releases/tag/v0.1.5)
+
 ---
 
 ## English
+
+### Download
+
+Pre-built binaries are available on [GitHub Releases](https://github.com/joyoki/rustpad/releases/latest):
+
+| Platform | File |
+|----------|------|
+| Linux x86_64 | `rustpad-v0.1.5-linux-x86_64.tar.gz` |
+| Windows x86_64 | `rustpad-v0.1.5-windows-x86_64.zip` |
+| macOS | `rustpad-v0.1.5-macos.app.zip`, `rustpad-v0.1.5-macos.dmg` |
+
+Extract and run the `rustpad` binary (or open `RustPad.app` on macOS).
 
 ### Features
 
@@ -25,15 +43,16 @@ A modern, cross-platform code editor built with Rust, inspired by Notepad++ with
 - Configurable word wrap
 - Right-click color marks (background highlights)
 
-#### File Diff (Beyond Compare style)
-- Side-by-side diff view with synchronized scrolling
-- Line-level, word-level, and character-level diff highlighting
+#### File Diff (Beyond Compare / Notepad-- style)
+- **Detached compare windows** for file, folder, and binary comparison
+- Side-by-side diff view with synchronized scrolling and virtualized rows
+- Line-level and character-level diff highlighting with merge arrows
 - Three diff algorithms: Myers, Patience, LCS
-- Ignore options: whitespace, case, line endings
-- Folder comparison with status indicators
-- Three-way merge with conflict detection
-- Export HTML diff reports
-- Diff navigation (heatmap, prev/next, jump to Nth)
+- Ignore options: whitespace, case, line endings; strict mode
+- Folder comparison with deep content mode and sync utilities
+- Binary byte-level comparison view
+- Export HTML diff reports; diff map strip and change navigation
+- Per-line inline editing with undo in compare view
 
 #### Search
 - Find and Replace with regex support
@@ -118,6 +137,18 @@ MIT License. See [LICENSE](LICENSE) for details.
 
 ## 中文
 
+### 下载
+
+预编译包见 [GitHub Releases](https://github.com/joyoki/rustpad/releases/latest)：
+
+| 平台 | 文件 |
+|------|------|
+| Linux x86_64 | `rustpad-v0.1.5-linux-x86_64.tar.gz` |
+| Windows x86_64 | `rustpad-v0.1.5-windows-x86_64.zip` |
+| macOS | `rustpad-v0.1.5-macos.app.zip`、`rustpad-v0.1.5-macos.dmg` |
+
+解压后运行 `rustpad`（macOS 可打开 `RustPad.app`）。
+
 ### 功能特性
 
 #### 核心编辑
@@ -133,15 +164,16 @@ MIT License. See [LICENSE](LICENSE) for details.
 - 可配置自动换行
 - 右键颜色标记（文字背景色）
 
-#### 文件对比（Beyond Compare 风格）
-- 左右并排对比，滚动同步
-- 行级、词级、字符级差异高亮
+#### 文件对比（Beyond Compare / Notepad-- 风格）
+- **独立对比窗口**：文件、文件夹、二进制对比
+- 左右并排对比，同步滚动，大文件虚拟化行渲染
+- 行级与字符级差异高亮，支持合并按钮（▶/◀）
 - 三种 Diff 算法：Myers、Patience、LCS
-- 可忽略空白、大小写、换行符差异
-- 文件夹对比与状态指示
-- 三方合并与冲突检测
-- 导出 HTML 对比报告
-- Diff 导航（热力图、上一条/下一条、跳转）
+- 可忽略空白、大小写、换行符；严格模式
+- 文件夹深度对比与同步工具
+- 二进制字节级对比视图
+- 导出 HTML 对比报告；差异图条与变更导航
+- 对比视图中支持行内编辑与撤销
 
 #### 搜索
 - 查找与替换（支持正则）
@@ -290,6 +322,9 @@ src/
 ├── search/              # Search / 搜索
 ├── session/             # Session & auto-save / 会话与自动保存
 └── ui/                  # egui UI components / 界面组件
+    ├── compare_session.rs   # Compare state / 对比会话
+    ├── compare_window.rs    # Compare window UI / 对比窗口
+    └── compare_viewport.rs  # Detached viewports / 独立视口
 ```
 
 ## Releases / 发布说明

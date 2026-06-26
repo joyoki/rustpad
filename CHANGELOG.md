@@ -15,6 +15,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### [Unreleased]
 
+### [0.1.5](https://github.com/joyoki/rustpad/compare/v0.1.4...v0.1.5) - 2026-06-26
+
+#### Added
+
+- **Detached compare viewports** (Notepad-- style): file, folder, and binary comparison in independent windows.
+- **CompareSession** state: path inputs, encoding profiles, diff options, inline edit undo, drop targets.
+- **Unified compare window**: icon toolbar, dual path bars, side-by-side diff editor, encoding footer, diff stats line.
+- **Text diff view** with virtualized rows, line backgrounds (insert/delete/replace), inline char highlights, merge buttons, diff map.
+- **Binary diff view** and **folder diff view** with dedicated toolbars.
+- **Binary comparison engine** and **folder sync** module; enhanced folder diff with deep content mode.
+- **Compare menu** and **macOS menu bar** integration; recent compare paths in config.
+- **i18n** strings for all compare UI (English / 中文).
+
+#### Changed
+
+- Removed legacy in-window diff panel; compare now opens in detached viewports.
+- Simplified in-editor diff toolbar for the new compare flow.
+
 ### [0.1.4](https://github.com/joyoki/rustpad/compare/v0.1.3...v0.1.4) - 2026-06-23
 
 #### Added
@@ -108,6 +126,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## 中文
 
 ### [未发布]
+
+### [0.1.5](https://github.com/joyoki/rustpad/compare/v0.1.4...v0.1.5) - 2026-06-26
+
+#### 新增
+
+- **独立对比视口**（Notepad-- 风格）：文件、文件夹、二进制对比均在独立窗口中打开。
+- **CompareSession** 状态管理：路径输入、编码配置、diff 选项、行内编辑撤销、拖放目标。
+- **统一对比窗口**：图标工具栏、双路径栏、左右并排 diff 编辑区、编码底栏、单行对比统计。
+- **文本 diff 视图**：虚拟滚动行、插入/删除/替换行背景、字符级高亮、合并按钮、差异图条。
+- **二进制 / 文件夹对比视图**及专用工具栏。
+- **二进制对比引擎**与**文件夹同步**；增强目录对比（深度内容模式）。
+- **对比菜单**与 **macOS 菜单栏**集成；最近对比路径写入配置。
+- 对比界面完整 **中英文 i18n**。
+
+#### 变更
+
+- 移除主窗口内嵌 diff 面板，对比改为独立弹出窗口。
+- 精简编辑器内 diff 工具栏以适配新对比流程。
 
 ### [0.1.4](https://github.com/joyoki/rustpad/compare/v0.1.3...v0.1.4) - 2026-06-23
 
